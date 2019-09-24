@@ -595,6 +595,20 @@ set_min_wakeup_time(int64_t wakeup_time)
     min_wakeup_time = (min_wakeup_time > wakeup_time ? wakeup_time : min_wakeup_time);
 }
 
+void thread_sleep(int64_t sleep_time)
+{
+  struct thread *curr_thread;
+  enum intr_level prev_intr_level;
+  
+  prev_intr_level = intr_disable();
+  curr_thread = thread_current();
+  if(curr_thread == idle_thread) return;
+  sleep_list_insert(curr_thread);
+  thread_block();
+
+  intr_set_level(prev_intr_level);
+}
+
 void 
 sleep_list_insert(struct thread *t)
 {
