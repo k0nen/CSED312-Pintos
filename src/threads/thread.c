@@ -95,6 +95,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -595,13 +596,17 @@ set_min_wakeup_time(int64_t wakeup_time)
     min_wakeup_time = (min_wakeup_time > wakeup_time ? wakeup_time : min_wakeup_time);
 }
 
-void thread_sleep(int64_t sleep_time)
+void 
+thread_sleep(int64_t sleep_time)
 {
   struct thread *curr_thread;
   enum intr_level prev_intr_level;
+  if(sleep_time <= 0) return;
   
   prev_intr_level = intr_disable();
   curr_thread = thread_current();
+  curr_thread->wakeup_time = sleep_time;
+
   if(curr_thread == idle_thread) return;
   sleep_list_insert(curr_thread);
   thread_block();
@@ -622,7 +627,7 @@ thread_wakeup(int64_t current_time)
   struct list_elem *here, *end;
   struct thread *t;
 
-  if(current_time < min_wakeup_time) return;
+  if(current_time < min_wakeup_time || min_wakeup_time == 0) return;
 
   here = list_begin(&sleep_list);
   end = list_end(&sleep_list);
