@@ -28,6 +28,9 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+static struct list sleep_list; // List of all sleeping threads.
+static int64_t min_wakeup_time; // Minimum value of wakeup time of sleeping threads.
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -582,3 +585,48 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+static void 
+set_min_wakeup_time(int64_t wakeup_time)
+{
+  if(min_wakeup_time == 0) 
+    min_wakeup_time = wakeup_time;
+  else 
+    min_wakeup_time = (min_wakeup_time > wakeup_time ? wakeup_time : min_wakeup_time);
+}
+
+void 
+sleep_list_insert(struct thread *t)
+{
+  list_push_back(&sleep_list, &t->elem);
+  set_min_wakeup_time(t->wakeup_time);
+}
+
+void 
+thread_wakeup(int64_t current_time)
+{
+  struct list_elem *here, *end;
+  struct thread *t;
+
+  if(current_time < min_wakeup_time) return;
+
+  here = list_begin(&sleep_list);
+  end = list_end(&sleep_list);
+  set_min_wakeup_time(0);
+
+  while(here != end)
+  {
+    t = list_entry(here, struct thread, elem);
+
+    if(current_time >= t->wakeup_time)
+    {
+      here = list_remove(&t->elem);
+      thread_unblock(t);
+    }
+    else
+    {
+      here = list_next(here);
+      set_min_wakeup_time(t->wakeup_time);
+    }
+  }
+}
