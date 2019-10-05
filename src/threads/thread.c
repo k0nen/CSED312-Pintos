@@ -61,6 +61,7 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+static int32_t load_avg = 0;        /* Load_avg in 17.14 format for MLFQS. */
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -136,11 +137,15 @@ thread_tick (void)
     user_ticks++;
 #endif
   else
+  {
     kernel_ticks++;
+    t->recent_cpu += 1<<14;
+  }
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
+
 }
 
 /* Prints thread statistics. */
@@ -351,35 +356,58 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+/* Updates the given thread's priority. */
+void
+thread_update_priority (struct thread *t)
+{
+  int new_priority = PRI_MAX;
+  new_priority -= thread_get_load_avg () / 4;
+  new_priority -= (t->nice) * 2;
+
+  if (new_priority > PRI_MAX)
+    new_priority = PRI_MAX;
+  if (new_priority < PRI_MIN)
+    new_priority = PRI_MIN;
+  t->priority = new_priority;
+}
+
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int new_nice) 
 {
-  /* Not yet implemented. */
+  thread_current ()->nice = new_nice;
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current ()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return load_avg * 100 / (1<<14);
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return (thread_current ()->recent_cpu) * 100 / (1<<14);
+}
+
+/* Updates the given thread's recent_cpu. */
+void
+thread_update_recent_cpu (struct thread *t)
+{
+  int32_t current_cpu = t->recent_cpu;
+  int32_t coef = ((int64_t) (2 * load_avg)) * (1 << 14);
+  coef /= (2 * load_avg + 1);
+
+  t->recent_cpu = coef * current_cpu + (t->nice);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -669,4 +697,36 @@ thread_wakeup(int64_t current_time)
       set_min_wakeup_time(t->wakeup_time);
     }
   }
+}
+
+/* Recalculate each thread's priority every 4 ticks
+   based on recent_cpu and niceness. */
+void
+thread_mlfqs_recalculate_priority (void)
+{
+  enum intr_level oldlevel = intr_disable ();
+
+  thread_foreach (thread_update_priority, NULL);
+  intr_set_level (oldlevel);
+}
+
+/* Recalculate system's load_avg every second. */
+void
+thread_mlfqs_recalculate_load_avg (void)
+{
+  struct thread *t = list_end(&all_list);
+  int is_not_idle = (thread_current () != idle_thread);
+  load_avg = ((59 * load_avg) + ((list_size(&ready_list) + is_not_idle) * 1<<14)) / 60;
+  printf("load_avg %d, ready_list %d\n", load_avg, list_size(&ready_list));
+  printf("running_thread %d %d\n", t->recent_cpu, list_size(&all_list));
+}
+
+/* Recalculate thread's recent_cpu every second. */
+void
+thread_mlfqs_recalculate_recent_cpu (void)
+{
+  enum intr_level oldlevel = intr_disable ();
+
+  thread_foreach (thread_update_recent_cpu, NULL);
+  intr_set_level (oldlevel);
 }

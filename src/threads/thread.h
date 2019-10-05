@@ -91,6 +91,9 @@ struct thread
     struct list_elem allelem;           /* List element for all threads list. */
     int64_t wakeup_time;
 
+    int32_t nice;                       /* Niceness for MLFQS. */
+    int32_t recent_cpu;                 /* Recent_cpu in 17.14 format for MLFQS. */
+
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
@@ -139,8 +142,15 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+void thread_update_priority (struct thread *t);
+void thread_update_recent_cpu (struct thread *t);
+
 void thread_sleep(int64_t sleep_time);
 void sleep_list_insert(struct thread *t);
 void thread_wakeup(int64_t current_time);
+
+void thread_mlfqs_recalculate_priority (void);
+void thread_mlfqs_recalculate_load_avg (void);
+void thread_mlfqs_recalculate_recent_cpu (void);
 
 #endif /* threads/thread.h */
