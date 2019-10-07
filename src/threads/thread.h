@@ -149,8 +149,6 @@ void thread_sleep(int64_t sleep_time);
 void sleep_list_insert(struct thread *t);
 void thread_wakeup(int64_t current_time);
 
-void thread_mlfqs_recalculate_priority (void);
 void thread_mlfqs_recalculate_load_avg (void);
-void thread_mlfqs_recalculate_recent_cpu (void);
 
 #endif /* threads/thread.h */

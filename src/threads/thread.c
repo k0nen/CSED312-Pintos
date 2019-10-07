@@ -406,13 +406,11 @@ thread_get_recent_cpu (void)
 void
 thread_update_recent_cpu (struct thread *t, void *aux UNUSED)
 {
-  int32_t current_cpu = t->recent_cpu, coef32;
+  int32_t current_cpu = t->recent_cpu;
   int64_t coef = ((int64_t) (2 * load_avg)) * (1 << 14);
   coef /= (2 * load_avg + (1<<14));
 
-  printf("<%s> current: %d, ", t->name, current_cpu);
   t->recent_cpu = coef * current_cpu / (1<<14) + (t->nice) * (1<<14);
-  printf("nice: %d, new: %d\n", t->nice, t->recent_cpu);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -709,26 +707,10 @@ thread_wakeup(int64_t current_time)
   }
 }
 
-/* Recalculate each thread's priority every 4 ticks
-   based on recent_cpu and niceness. */
-void
-thread_mlfqs_recalculate_priority (void)
-{
-  thread_foreach (thread_update_priority, NULL);
-}
-
 /* Recalculate system's load_avg every second. */
 void
 thread_mlfqs_recalculate_load_avg (void)
 {
   int is_not_idle = (thread_current () != idle_thread);
   load_avg = ((59 * load_avg) + ((list_size(&ready_list) + is_not_idle) * 1<<14)) / 60;
-  printf("load_avg %d\n", load_avg);
-}
-
-/* Recalculate thread's recent_cpu every second. */
-void
-thread_mlfqs_recalculate_recent_cpu (void)
-{
-  thread_foreach (thread_update_recent_cpu, NULL);
 }
