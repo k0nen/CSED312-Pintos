@@ -131,7 +131,9 @@ thread_tick (void)
 
   /* Update statistics. */
   if (t == idle_thread)
+  {
     idle_ticks++;
+  }
 #ifdef USERPROG
   else if (t->pagedir != NULL)
     user_ticks++;
@@ -358,11 +360,12 @@ thread_get_priority (void)
 
 /* Updates the given thread's priority. */
 void
-thread_update_priority (struct thread *t)
+thread_update_priority (struct thread *t, void *aux UNUSED)
 {
-  int new_priority = PRI_MAX;
-  new_priority -= thread_get_load_avg () / 4;
-  new_priority -= (t->nice) * 2;
+  int new_priority = PRI_MAX * (1<<14);
+  new_priority -= t->recent_cpu / 4;
+  new_priority -= (t->nice) * (1<<14) * 2;
+  new_priority /= (1<<14);
 
   if (new_priority > PRI_MAX)
     new_priority = PRI_MAX;
@@ -401,13 +404,15 @@ thread_get_recent_cpu (void)
 
 /* Updates the given thread's recent_cpu. */
 void
-thread_update_recent_cpu (struct thread *t)
+thread_update_recent_cpu (struct thread *t, void *aux UNUSED)
 {
-  int32_t current_cpu = t->recent_cpu;
-  int32_t coef = ((int64_t) (2 * load_avg)) * (1 << 14);
-  coef /= (2 * load_avg + 1);
+  int32_t current_cpu = t->recent_cpu, coef32;
+  int64_t coef = ((int64_t) (2 * load_avg)) * (1 << 14);
+  coef /= (2 * load_avg + (1<<14));
 
-  t->recent_cpu = coef * current_cpu + (t->nice);
+  printf("<%s> current: %d, ", t->name, current_cpu);
+  t->recent_cpu = coef * current_cpu / (1<<14) + (t->nice) * (1<<14);
+  printf("nice: %d, new: %d\n", t->nice, t->recent_cpu);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -497,6 +502,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->nice = 0;
+  if (t == initial_thread)
+    t->recent_cpu = 0;
+  else
+    t->recent_cpu = thread_get_recent_cpu() * (1<<14) / 100;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -704,29 +714,21 @@ thread_wakeup(int64_t current_time)
 void
 thread_mlfqs_recalculate_priority (void)
 {
-  enum intr_level oldlevel = intr_disable ();
-
   thread_foreach (thread_update_priority, NULL);
-  intr_set_level (oldlevel);
 }
 
 /* Recalculate system's load_avg every second. */
 void
 thread_mlfqs_recalculate_load_avg (void)
 {
-  struct thread *t = list_end(&all_list);
   int is_not_idle = (thread_current () != idle_thread);
   load_avg = ((59 * load_avg) + ((list_size(&ready_list) + is_not_idle) * 1<<14)) / 60;
-  printf("load_avg %d, ready_list %d\n", load_avg, list_size(&ready_list));
-  printf("running_thread %d %d\n", t->recent_cpu, list_size(&all_list));
+  printf("load_avg %d\n", load_avg);
 }
 
 /* Recalculate thread's recent_cpu every second. */
 void
 thread_mlfqs_recalculate_recent_cpu (void)
 {
-  enum intr_level oldlevel = intr_disable ();
-
   thread_foreach (thread_update_recent_cpu, NULL);
-  intr_set_level (oldlevel);
 }

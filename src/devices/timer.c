@@ -169,20 +169,25 @@ timer_print_stats (void)
 static void
 timer_interrupt (struct intr_frame *args UNUSED)
 {
+  int current_ticks;
   ticks++;
   thread_tick ();
   thread_wakeup(ticks);
 
   /* MLFQS. */
+  current_ticks = timer_ticks();
   if (thread_mlfqs) {
-    if (timer_ticks () % 4 == 0) {
-      // Recalculate priority
-      thread_mlfqs_recalculate_priority ();
+    if (current_ticks % 4 == 0) {
+      /* Recalculate each thread's priority every 4 ticks
+         based on recent_cpu and niceness. */
+      thread_foreach (thread_update_priority, NULL);
     }
 
-    if (timer_ticks () % TIMER_FREQ == 0) {
-      thread_mlfqs_recalculate_recent_cpu ();
+    if (current_ticks % TIMER_FREQ == 0) {
+      /* Recalculate system's load_avg
+         and each thread's recent_cpu every second. */
       thread_mlfqs_recalculate_load_avg ();
+      thread_foreach (thread_update_recent_cpu, NULL);
     }
   }
 }
