@@ -69,6 +69,7 @@ sema_down (struct semaphore *sema)
   while (sema->value == 0) 
     {
       list_push_back (&sema->waiters, &thread_current ()->elem);
+      if(thread_current()->parent != NULL) thread_priority_donation(thread_current());
       thread_block ();
     }
   sema->value--;
@@ -114,7 +115,7 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
+  while (!list_empty (&sema->waiters)) 
   {
     here = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
     parent = thread_parent(here);
@@ -249,8 +250,9 @@ lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  lock->holder = NULL;
   sema_up (&lock->semaphore);
+  lock->holder = NULL;
+  thread_yield();
 }
 
 /* Returns true if the current thread holds LOCK, false

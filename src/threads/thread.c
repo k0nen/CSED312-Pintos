@@ -72,6 +72,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static bool is_thread (struct thread *) UNUSED;
 static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
+static void swap(int *a, int *b);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
@@ -347,7 +348,15 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->priority = new_priority;
+  struct thread *here = thread_current();
+
+  if(here->parent == NULL && here->swap_child == NULL) here->priority = new_priority;
+  else
+  {
+    if(here->swap_child != NULL) here->swap_child->priority = new_priority;
+    else thread_root(here)->priority = new_priority;
+  }
+  
   thread_yield();
 }
 
@@ -720,10 +729,48 @@ struct thread* thread_root(struct thread *t)
   else return thread_root(parent);
 }
 
+void thread_priority_donation(struct thread *t)
+{
+  struct thread *root, *parent;
+  root = thread_root(t);
+  parent = thread_parent(t);
+
+  if(root == t)
+  {
+    root = thread_root(parent);
+    if(root->priority < t->priority)
+    {
+      if(parent->swap_child == NULL)
+      {
+        swap(&root->priority, &t->priority);
+      }
+      else
+      {
+        swap(&parent->swap_child->priority, &t->priority);
+        swap(&root->priority, &parent->swap_child->priority);
+      }
+      parent->swap_child = t;
+    }
+  }
+  else
+  {
+    swap(&root->priority, &t->priority);
+    parent->swap_child = NULL;
+  }
+  
+}
+
 /* Recalculate system's load_avg every second. */
 void
 thread_mlfqs_recalculate_load_avg (void)
 {
   int is_not_idle = (thread_current () != idle_thread);
   load_avg = ((59 * load_avg) + ((list_size(&ready_list) + is_not_idle) * 1<<14)) / 60;
+}
+
+void swap(int *a, int *b)
+{
+  int c = *a;
+  *a = *b;
+  *b = c;
 }
