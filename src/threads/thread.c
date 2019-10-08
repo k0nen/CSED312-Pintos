@@ -61,6 +61,7 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+static int32_t load_avg = 0;        /* Load_avg in 17.14 format for MLFQS. */
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -130,17 +131,23 @@ thread_tick (void)
 
   /* Update statistics. */
   if (t == idle_thread)
+  {
     idle_ticks++;
+  }
 #ifdef USERPROG
   else if (t->pagedir != NULL)
     user_ticks++;
 #endif
   else
+  {
     kernel_ticks++;
+    t->recent_cpu += 1<<14;
+  }
 
   /* Enforce preemption. */
   if (++thread_ticks >= TIME_SLICE)
     intr_yield_on_return ();
+
 }
 
 /* Prints thread statistics. */
@@ -204,6 +211,7 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  thread_yield();
 
   return tid;
 }
@@ -340,6 +348,7 @@ void
 thread_set_priority (int new_priority) 
 {
   thread_current ()->priority = new_priority;
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -349,35 +358,59 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+/* Updates the given thread's priority. */
+void
+thread_update_priority (struct thread *t, void *aux UNUSED)
+{
+  int new_priority = PRI_MAX * (1<<14);
+  new_priority -= t->recent_cpu / 4;
+  new_priority -= (t->nice) * (1<<14) * 2;
+  new_priority /= (1<<14);
+
+  if (new_priority > PRI_MAX)
+    new_priority = PRI_MAX;
+  if (new_priority < PRI_MIN)
+    new_priority = PRI_MIN;
+  t->priority = new_priority;
+}
+
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int new_nice) 
 {
-  /* Not yet implemented. */
+  thread_current ()->nice = new_nice;
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current ()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return load_avg * 100 / (1<<14);
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return (thread_current ()->recent_cpu) * 100 / (1<<14);
+}
+
+/* Updates the given thread's recent_cpu. */
+void
+thread_update_recent_cpu (struct thread *t, void *aux UNUSED)
+{
+  int32_t current_cpu = t->recent_cpu;
+  int64_t coef = ((int64_t) (2 * load_avg)) * (1 << 14);
+  coef /= (2 * load_avg + (1<<14));
+
+  t->recent_cpu = coef * current_cpu / (1<<14) + (t->nice) * (1<<14);
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -467,6 +500,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->nice = 0;
+  if (t == initial_thread)
+    t->recent_cpu = 0;
+  else
+    t->recent_cpu = thread_get_recent_cpu() * (1<<14) / 100;
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
@@ -494,10 +532,29 @@ alloc_frame (struct thread *t, size_t size)
 static struct thread *
 next_thread_to_run (void) 
 {
+  struct list_elem *here, *end;
+  struct thread *t, *ret;
+
   if (list_empty (&ready_list))
     return idle_thread;
   else
-    return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  {
+    here = list_begin(&ready_list);
+    end = list_end(&ready_list);
+    ret = NULL;
+
+    while(here != end)
+    {
+      t = list_entry(here, struct thread, elem);
+
+      if(!ret || ret->priority < t->priority)
+        ret = t;
+
+      here = list_next(here);
+    }
+    list_remove(&ret->elem);
+    return ret;
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -648,4 +705,12 @@ thread_wakeup(int64_t current_time)
       set_min_wakeup_time(t->wakeup_time);
     }
   }
+}
+
+/* Recalculate system's load_avg every second. */
+void
+thread_mlfqs_recalculate_load_avg (void)
+{
+  int is_not_idle = (thread_current () != idle_thread);
+  load_avg = ((59 * load_avg) + ((list_size(&ready_list) + is_not_idle) * 1<<14)) / 60;
 }
