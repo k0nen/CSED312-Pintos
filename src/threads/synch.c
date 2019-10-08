@@ -60,6 +60,7 @@ sema_init (struct semaphore *sema, unsigned value)
 void
 sema_down (struct semaphore *sema) 
 {
+  bool inserted = false;
   enum intr_level old_level;
 
   ASSERT (sema != NULL);
@@ -68,9 +69,26 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
-      if(thread_current()->parent != NULL) thread_priority_donation(thread_current());
-      thread_block ();
+      if(thread_current()->parent != NULL)
+      {
+        if(!inserted) 
+        {
+          list_push_back (&sema->waiters, &thread_current ()->lock_elem);
+          inserted = true;
+        }
+        thread_priority_donation(thread_current());
+        thread_yield();
+      }
+      else
+      {
+        list_remove(&thread_current()->elem);
+        if(!inserted)
+        {
+          list_push_back (&sema->waiters, &thread_current ()->lock_elem);
+          inserted = true;
+        }
+        thread_block ();
+      }
     }
   sema->value--;
   intr_set_level (old_level);
@@ -110,6 +128,7 @@ void
 sema_up (struct semaphore *sema) 
 {
   struct thread *here, *parent;
+  bool is_lock = false;
   enum intr_level old_level;
 
   ASSERT (sema != NULL);
@@ -117,21 +136,26 @@ sema_up (struct semaphore *sema)
   old_level = intr_disable ();
   while (!list_empty (&sema->waiters)) 
   {
-    here = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
+    here = list_entry(list_pop_front(&sema->waiters), struct thread, lock_elem);
     parent = thread_parent(here);
-    
+
+    is_lock = (parent != NULL);
     if(parent != NULL && parent->swap_child == here)
     {
       int priority = parent->priority;
       parent->priority = here->priority;
       here->priority = priority;
+
+      parent->swap_child = NULL;
     }
     
+    if(parent == NULL) thread_unblock(here);
     here->parent = NULL;
-    thread_unblock(here);
   }
   sema->value++;
   intr_set_level (old_level);
+
+  if(!is_lock) thread_yield();
 }
 
 static void sema_test_helper (void *sema_);
