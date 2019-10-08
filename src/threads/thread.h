@@ -91,14 +91,13 @@ struct thread
     struct list_elem allelem;           /* List element for all threads list. */
     int64_t wakeup_time;
     struct lock *parent;
-    struct thread *donation;
+    struct thread *swap_child;
 
     int32_t nice;                       /* Niceness for MLFQS. */
     int32_t recent_cpu;                 /* Recent_cpu in 17.14 format for MLFQS. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
-    struct list_elem lock_elem;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -154,7 +153,7 @@ void thread_wakeup(int64_t);
 
 struct thread* thread_parent(struct thread *);
 struct thread* thread_root(struct thread *);
-void thread_priority_donation(struct thread *, struct thread *);
+void thread_priority_donation(struct thread *);
 
 void thread_mlfqs_recalculate_load_avg (void);
 

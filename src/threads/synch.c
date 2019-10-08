@@ -108,14 +108,27 @@ sema_try_down (struct semaphore *sema)
 void
 sema_up (struct semaphore *sema) 
 {
+  struct thread *here, *parent;
   enum intr_level old_level;
 
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) 
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  {
+    here = list_entry(list_pop_front(&sema->waiters), struct thread, elem);
+    parent = thread_parent(here);
+    
+    if(parent != NULL && parent->swap_child == here)
+    {
+      int priority = parent->priority;
+      parent->priority = here->priority;
+      here->priority = priority;
+    }
+    
+    here->parent = NULL;
+    thread_unblock(here);
+  }
   sema->value++;
   intr_set_level (old_level);
 }
@@ -196,7 +209,12 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
-  sema_down (&lock->semaphore);
+  if(!sema_try_down(&lock->semaphore))
+  {
+    thread_current()->parent = lock;
+    sema_down(&lock->semaphore);
+  }
+
   lock->holder = thread_current ();
 }
 
@@ -246,6 +264,15 @@ lock_held_by_current_thread (const struct lock *lock)
   return lock->holder == thread_current ();
 }
 
+void
+lock_add_child(struct lock *parent, struct thread *child)
+{
+  struct list *child_list = &parent->semaphore.waiters;
+
+  list_push_back (child_list, &child->elem);
+  child->parent = parent;
+}
+
 /* One semaphore in a list. */
 struct semaphore_elem 
   {

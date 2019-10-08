@@ -707,6 +707,19 @@ thread_wakeup(int64_t current_time)
   }
 }
 
+struct thread* thread_parent(struct thread *t)
+{
+  return t->parent ? t->parent->holder : NULL;
+}
+
+struct thread* thread_root(struct thread *t)
+{
+  struct thread *parent = thread_parent(t);
+
+  if(parent == NULL || parent->swap_child != t) return t;
+  else return thread_root(parent);
+}
+
 /* Recalculate system's load_avg every second. */
 void
 thread_mlfqs_recalculate_load_avg (void)
