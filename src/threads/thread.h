@@ -90,12 +90,15 @@ struct thread
     int priority;                       /* Priority. */
     struct list_elem allelem;           /* List element for all threads list. */
     int64_t wakeup_time;
+    struct lock *parent;
+    struct thread *donation;
 
     int32_t nice;                       /* Niceness for MLFQS. */
     int32_t recent_cpu;                 /* Recent_cpu in 17.14 format for MLFQS. */
 
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
+    struct list_elem lock_elem;
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
@@ -142,12 +145,16 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
-void thread_update_priority (struct thread *t, void *aux UNUSED);
-void thread_update_recent_cpu (struct thread *t, void *aux UNUSED);
+void thread_update_priority (struct thread *, void *aux);
+void thread_update_recent_cpu (struct thread *, void *aux);
 
-void thread_sleep(int64_t sleep_time);
-void sleep_list_insert(struct thread *t);
-void thread_wakeup(int64_t current_time);
+void thread_sleep(int64_t);
+void sleep_list_insert(struct thread *);
+void thread_wakeup(int64_t);
+
+struct thread* thread_parent(struct thread *);
+struct thread* thread_root(struct thread *);
+void thread_priority_donation(struct thread *, struct thread *);
 
 void thread_mlfqs_recalculate_load_avg (void);
 
