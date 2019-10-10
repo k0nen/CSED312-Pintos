@@ -722,13 +722,15 @@ thread_wakeup(int64_t current_time)
 }
 
 /* Returns the thread's lock tree parent. */
-struct thread* thread_parent(struct thread *t)
+struct 
+thread* thread_parent(struct thread *t)
 {
   return t->parent ? t->parent->holder : NULL;
 }
 
 /* Returns the thread's lock tree root. */
-struct thread* thread_root(struct thread *t)
+struct
+thread* thread_root(struct thread *t)
 {
   struct thread *parent = thread_parent(t);
 
@@ -777,7 +779,8 @@ thread_mlfqs_recalculate_load_avg (void)
   load_avg = ((59 * load_avg) + ((list_size(&ready_list) + is_not_idle) * 1<<14)) / 60;
 }
 
-void swap(int *a, int *b)
+void
+swap(int *a, int *b)
 {
   int c = *a;
   *a = *b;
