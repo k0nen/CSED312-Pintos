@@ -653,6 +653,8 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
+/* Set min_wakeup_sime to the nearest future when 
+   a thread needs to be unblocked. */
 static void 
 set_min_wakeup_time(int64_t wakeup_time)
 {
@@ -662,6 +664,7 @@ set_min_wakeup_time(int64_t wakeup_time)
     min_wakeup_time = (min_wakeup_time > wakeup_time ? wakeup_time : min_wakeup_time);
 }
 
+/* Sleep a thread and block it. */
 void 
 thread_sleep(int64_t sleep_time)
 {
@@ -680,6 +683,7 @@ thread_sleep(int64_t sleep_time)
   intr_set_level(prev_intr_level);
 }
 
+/* Insert a thread into sleep list. */
 void 
 sleep_list_insert(struct thread *t)
 {
@@ -687,6 +691,7 @@ sleep_list_insert(struct thread *t)
   set_min_wakeup_time(t->wakeup_time);
 }
 
+/* Unblock threads if the thread's wakeup time is past current_time. */
 void 
 thread_wakeup(int64_t current_time)
 {
@@ -716,11 +721,13 @@ thread_wakeup(int64_t current_time)
   }
 }
 
+/* Returns the thread's lock tree parent. */
 struct thread* thread_parent(struct thread *t)
 {
   return t->parent ? t->parent->holder : NULL;
 }
 
+/* Returns the thread's lock tree root. */
 struct thread* thread_root(struct thread *t)
 {
   struct thread *parent = thread_parent(t);
@@ -729,7 +736,9 @@ struct thread* thread_root(struct thread *t)
   else return thread_root(parent);
 }
 
-void thread_priority_donation(struct thread *t)
+/* Execute priority donation to ensure thread t can run properly. */
+void
+thread_priority_donation(struct thread *t)
 {
   struct thread *root, *parent;
   root = thread_root(t);
