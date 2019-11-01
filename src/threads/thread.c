@@ -198,6 +198,10 @@ thread_create (const char *name, int priority,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+#ifdef USERPROG
+  list_init(&t->waiters);
+#endif
+
   /* Add to run queue. */
   thread_unblock (t);
 
@@ -283,7 +287,7 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-  process_exit ();
+  process_exit (false);
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
@@ -577,6 +581,35 @@ allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
+}
+
+void
+thread_join(tid_t tid)
+{
+  struct thread *t = thread_get_by_tid(tid);
+  enum intr_level old_level;
+
+  old_level = intr_disable ();
+  
+  ASSERT(t != NULL);
+  list_push_back(&t->waiters, &thread_current()->elem);
+  thread_block();
+
+  intr_set_level (old_level);
+}
+
+struct thread*
+thread_get_by_tid(tid_t tid)
+{
+  struct list_elem *here;
+  for(here = list_begin(&all_list); here != list_end(&all_list); here = list_next(here))
+  {
+    struct thread *t = list_entry(here, struct thread, allelem);
+
+    if(t->tid == tid) return t;
+  }
+
+  return NULL;
 }
 
 /* Offset of `stack' member within `struct thread'.

@@ -95,7 +95,9 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
+    int type;                           /* Thread type */
     uint32_t *pagedir;                  /* Page directory. */
+    struct list waiters;                /* Thread waiters list */
 #endif
 
     /* Owned by thread.c. */
@@ -138,4 +140,6 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+void thread_join(tid_t tid);
+struct thread* thread_get_by_tid(tid_t tid);
 #endif /* threads/thread.h */

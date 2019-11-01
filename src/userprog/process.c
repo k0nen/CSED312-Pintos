@@ -53,19 +53,67 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
+  int argc, total_size;
+  char *token, *save_ptr;
+  void *addr, *argv[100];
+
+  thread_current()->type = 1;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
 
-  /* If load failed, quit. */
+  /* Constructing stack */
+  /* Argument parsing using strtok_r function */
+  for (argc = 0, total_size = 0, token = strtok_r (file_name, " ", &save_ptr); 
+    token != NULL; 
+    token = strtok_r (NULL, " ", &save_ptr))
+  {
+    if(argc == 0)
+    {
+      success = load (file_name, &if_.eip, &if_.esp);
+
+      /* If load failed, quit. */
+      if (!success) 
+      {
+        palloc_free_page (file_name);
+        thread_exit ();
+      }
+    }
+
+    if_.esp -= strlen(token) + 1;
+    strlcpy(if_.esp, token, strlen(token) + 1);
+    argv[argc++] = if_.esp;
+    total_size += strlen(token) + 1;
+  }
+
+  /* Word alignment and stack argv[argc] */
+  if_.esp -= (4 - total_size % 4) % 4 + 4;
+  memset(if_.esp, 0, (4 - total_size % 4) % 4 + 4);
+
+  /* Stack each argument address */
+  for(int i = argc - 1; i >= 0; i--)
+  {
+    if_.esp -= 4;
+    memcpy(if_.esp, &argv[i], 4);
+  }
+
+  /* Stack char *argv[] start address */
+  addr = if_.esp;
+  if_.esp -= 4;
+  memcpy(if_.esp, &addr, 4);
+
+  /* Stack argument numbers argc */
+  if_.esp -= 4;
+  memcpy(if_.esp, &argc, 4);
+
+  /* Stack return address, which is NULL */
+  if_.esp -= 4;
+  memset(if_.esp, 0, 4);
+
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
-
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
@@ -86,15 +134,17 @@ start_process (void *file_name_)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
+  thread_join(child_tid);
   return -1;
 }
 
 /* Free the current process's resources. */
 void
-process_exit (void)
+process_exit (bool isHalt)
 {
+  struct list_elem *here, *end;
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
@@ -114,6 +164,18 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+  here = list_begin(&cur->waiters);
+  end = list_end(&cur->waiters);
+  while(here != end)
+  {
+    struct thread *t = list_entry(here, struct thread, elem);
+    
+    here = list_remove(&t->elem);
+    thread_unblock(t);
+  }
+
+  if(cur->type != 0 && !isHalt) printf("%s: exit(%d)\n", cur->name, 0);
 }
 
 /* Sets up the CPU for running user code in the current
