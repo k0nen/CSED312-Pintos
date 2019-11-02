@@ -3,11 +3,18 @@
 
 #include <stdbool.h>
 #include <user/syscall.h>
+#include <threads/synch.h>
+#include <threads/vaddr.h>
 
-void syscall_init (void);
+/* Only a single thread(either user or kernel) can access the file system
+   at any time. */
+struct lock file_system_lock;
 
+/* Utility functions */
 bool is_valid_ptr (void *p);
 
+/* Syscalls */
+void syscall_init (void);
 void halt (void);
 void exit (int status);
 pid_t exec (const char *cmd_line);

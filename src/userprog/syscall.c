@@ -9,7 +9,8 @@ static void syscall_handler (struct intr_frame *);
 void
 syscall_init (void) 
 {
-  intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
+  lock_init(&file_system_lock);
 }
 
 /* Check if the giver pointer has a valid address. Every
@@ -18,11 +19,11 @@ syscall_init (void)
 bool
 is_valid_ptr(void *p)
 {
-  return true;
+  return is_user_vaddr(p) && (p >= 0x08048000);
 }
 
 static void
-syscall_handler (struct intr_frame *f) 
+syscall_handler(struct intr_frame *f) 
 {
   // esp holds address to syscall code
   int32_t *esp = f->esp;
@@ -36,6 +37,7 @@ syscall_handler (struct intr_frame *f)
     halt();
     break;
   case SYS_EXIT:
+    exit(*(esp+1));
     break;
   case SYS_EXEC:
     break;
@@ -52,6 +54,7 @@ syscall_handler (struct intr_frame *f)
   case SYS_READ:
     break;
   case SYS_WRITE:
+    f->eax = write(*(esp+1), (const void *) *(esp+2), (unsigned int) *(esp+3));
     break;
   case SYS_SEEK:
     break;
@@ -62,6 +65,8 @@ syscall_handler (struct intr_frame *f)
   default:
     break;
   }
+
+
 }
 
 /* Terminates Pintos by calling shutdown_power_off(). */
@@ -75,7 +80,7 @@ halt (void)
 void
 exit (int status)
 {
-  
+  thread_exit();
 }
 
 /* Runs the executable whose name is given in cmd_line, passing any given
@@ -144,7 +149,34 @@ read (int fd, void *buffer, unsigned size)
 int
 write (int fd, const void *buffer, unsigned size)
 {
-
+  int write_size = 0;
+  
+  // Buffer validity check
+  if (!is_valid_ptr(buffer) || !is_valid_ptr(buffer + size))
+    exit(-1);
+  
+  lock_acquire(&file_system_lock);
+  
+  if(fd == 0)
+  {
+    // Write attempt to stdin
+    write_size = 0;
+  }
+  else if(fd == 1)
+  {
+    // Write attempt to stdout
+    putbuf(buffer, size);
+    write_size = size;
+  }
+  else
+  {
+    // Write attempt to file
+    // TODO
+  }
+  
+  lock_release(&file_system_lock);
+  
+  return write_size;
 }
 
 /* Changes the next byte to be read or written in open file fd to position,
