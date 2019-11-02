@@ -98,6 +98,7 @@ struct thread
     int type;                           /* Thread type */
     uint32_t *pagedir;                  /* Page directory. */
     struct list waiters;                /* Thread waiters list */
+    struct list_elem waitelem;          /* List element for thread waiters list. */
 #endif
 
     /* Owned by thread.c. */

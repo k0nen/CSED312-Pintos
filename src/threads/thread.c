@@ -592,7 +592,7 @@ thread_join(tid_t tid)
   old_level = intr_disable ();
   
   ASSERT(t != NULL);
-  list_push_back(&t->waiters, &thread_current()->elem);
+  list_push_back(&t->waiters, &thread_current()->waitelem);
   thread_block();
 
   intr_set_level (old_level);
