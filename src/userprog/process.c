@@ -169,9 +169,9 @@ process_exit (bool isHalt)
   end = list_end(&cur->waiters);
   while(here != end)
   {
-    struct thread *t = list_entry(here, struct thread, elem);
+    struct thread *t = list_entry(here, struct thread, waitelem);
     
-    here = list_remove(&t->elem);
+    here = list_remove(&t->waitelem);
     thread_unblock(t);
   }
 
