@@ -13,13 +13,12 @@ syscall_init (void)
   lock_init(&file_system_lock);
 }
 
-/* Check if the giver pointer has a valid address. Every
-   memory access attempts inside system calls must check
-   this for validity. */
-bool
-is_valid_ptr(void *p)
+/* Assures that the given pointer is valid. Otherwise, terminate process. */
+void
+assert_valid_ptr(void *p)
 {
-  return is_user_vaddr(p) && (p >= 0x08048000);
+  if(!is_user_vaddr(p) || (p < 0x08048000))
+    exit(-1);
 }
 
 static void
@@ -28,8 +27,7 @@ syscall_handler(struct intr_frame *f)
   // esp holds address to syscall code
   int32_t *esp = f->esp;
   
-  if(!is_valid_ptr(esp))
-    exit(-1);
+  assert_valid_ptr(esp);
 
   switch(*esp)
   {
@@ -37,6 +35,7 @@ syscall_handler(struct intr_frame *f)
     halt();
     break;
   case SYS_EXIT:
+    assert_valid_ptr(esp+1);
     exit(*(esp+1));
     break;
   case SYS_EXEC:
@@ -54,6 +53,7 @@ syscall_handler(struct intr_frame *f)
   case SYS_READ:
     break;
   case SYS_WRITE:
+    assert_valid_ptr(esp+3);
     f->eax = write(*(esp+1), (const void *) *(esp+2), (unsigned int) *(esp+3));
     break;
   case SYS_SEEK:
@@ -63,6 +63,7 @@ syscall_handler(struct intr_frame *f)
   case SYS_CLOSE:
     break;
   default:
+    exit(-1);
     break;
   }
 
@@ -80,6 +81,8 @@ halt (void)
 void
 exit (int status)
 {
+  struct thread *cur = thread_current();
+  if(cur->type != 0) printf("%s: exit(%d)\n", cur->name, status);
   thread_exit();
 }
 
@@ -152,8 +155,8 @@ write (int fd, const void *buffer, unsigned size)
   int write_size = 0;
   
   // Buffer validity check
-  if (!is_valid_ptr(buffer) || !is_valid_ptr(buffer + size))
-    exit(-1);
+  assert_valid_ptr(buffer);
+  assert_valid_ptr(buffer + size);
   
   lock_acquire(&file_system_lock);
   

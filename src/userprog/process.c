@@ -80,7 +80,7 @@ start_process (void *file_name_)
       if (!success) 
       {
         palloc_free_page (file_name);
-        thread_exit ();
+        exit(-1);
       }
     }
 
@@ -175,8 +175,6 @@ process_exit (bool isHalt)
     here = list_remove(&t->waitelem);
     thread_unblock(t);
   }
-
-  if(cur->type != 0 && !isHalt) printf("%s: exit(%d)\n", cur->name, 0);
 }
 
 /* Sets up the CPU for running user code in the current

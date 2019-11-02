@@ -11,7 +11,7 @@
 struct lock file_system_lock;
 
 /* Utility functions */
-bool is_valid_ptr (void *p);
+void assert_valid_ptr(void *p);
 
 /* Syscalls */
 void syscall_init (void);
