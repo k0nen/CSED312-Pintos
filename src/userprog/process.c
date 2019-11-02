@@ -74,6 +74,7 @@ start_process (void *file_name_)
     if(argc == 0)
     {
       success = load (file_name, &if_.eip, &if_.esp);
+      strlcpy(thread_current()->name, token, strlen(token) + 1);
 
       /* If load failed, quit. */
       if (!success) 
