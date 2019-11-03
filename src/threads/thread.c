@@ -287,7 +287,7 @@ thread_exit (void)
   ASSERT (!intr_context ());
 
 #ifdef USERPROG
-  process_exit (false);
+  process_exit ();
 #endif
 
   /* Remove thread from all threads list, set our status to dying,
@@ -592,7 +592,7 @@ thread_join(tid_t tid)
   old_level = intr_disable ();
   
   ASSERT(t != NULL);
-  list_push_back(&t->waiters, &thread_current()->waitelem);
+  list_push_back(&t->waiters, &thread_current()->elem);
   thread_block();
 
   intr_set_level (old_level);
