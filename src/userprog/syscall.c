@@ -2,21 +2,27 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
+#include "userprog/pagedir.h"
 
 static void syscall_handler (struct intr_frame *);
 
 /* Global list of open files. */
 struct list file_list;
 
+/* Global fd counter. */
+unsigned int fd_counter = 2;
+
 /* Only a single thread(either user or kernel) can access the file system
    at any time. */
 struct lock file_system_lock;
+
 
 void
 syscall_init (void) 
 {
   intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
   lock_init(&file_system_lock);
+  list_init(&file_list);
 }
 
 /* Assures that the given pointer is valid. Otherwise, terminate process. */
@@ -25,6 +31,9 @@ assert_valid_ptr(void *p)
 {
   if(!is_user_vaddr(p) || (p < 0x08048000))
     exit(-1);
+  if(!pagedir_is_accessed(thread_current()->pagedir, p))
+    exit(-1);
+
 }
 
 static void
@@ -168,17 +177,31 @@ open (const char *file)
 {
   struct file_desc *fd;
   struct file *f;
+  int status;
+
   assert_valid_ptr(file);
 
   lock_acquire(&file_system_lock);
+
   f = filesys_open(file);
   if(f != NULL)
   {
     fd = malloc(sizeof(struct file_desc));
-    // TODO
-  }
 
+    fd->fd = fd_counter++;
+    fd->owner = thread_current()->tid;
+    fd->file = f;
+    list_push_back(&file_list, &fd->elem);
+
+    status = fd->fd;
+  }
+  else
+  {
+    status = -1;
+  }
   lock_release(&file_system_lock);
+
+  return status;
 }
 
 /* : Returns the size, in bytes, of the file open as fd. */
