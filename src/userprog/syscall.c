@@ -33,7 +33,6 @@ assert_valid_ptr(void *p)
     exit(-1);
   if(!pagedir_is_accessed(thread_current()->pagedir, p))
     exit(-1);
-
 }
 
 static void
@@ -117,8 +116,26 @@ void
 exit (int status)
 {
   struct thread *cur = thread_current();
+  struct list_elem *here = list_begin(&file_list);
+  struct list_elem *end = list_end(&file_list);
+
+  /* Delete current process' open file descriptors. */
+  while(here != end)
+  {
+    struct file_desc *t = list_entry(here, struct file_desc, elem);
+    if(t->owner == cur->tid)
+    {
+      here = list_remove(&t->elem);
+    }
+    else
+      here = list_next(&t->elem);
+  }
+
+  /* Print exit message. */
   if(cur->type != 0)
     printf("%s: exit(%d)\n", cur->name, status);
+
+  
   thread_exit();
 }
 
@@ -218,7 +235,33 @@ filesize (int fd)
 int
 read (int fd, void *buffer, unsigned size)
 {
+  int read_size = 0;
 
+  // Buffer validity check
+  assert_valid_ptr(buffer);
+  assert_valid_ptr(buffer + size);
+
+  lock_acquire(&file_system_lock);
+
+  if(fd == 0)
+  {
+    // Read attempt from stdin
+    for(unsigned i = 0; i < size; i++)
+      *((char *)buffer + i) = input_getc();
+    read_size = size;
+  }
+  else if(fd == 1)
+  {
+    // Read attempt from stdout
+    read_size = 0;
+  }
+  else
+  {
+    // Readf attempt from file
+    // TODO
+  }
+
+  lock_release(&file_system_lock);
 }
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
@@ -281,5 +324,21 @@ tell (int fd)
 void
 close (int fd)
 {
+  struct list_elem *here = list_begin(&file_list);
+  struct list_elem *end = list_end(&file_list);
 
+  lock_acquire(&file_system_lock);
+
+  while(here != end)
+  {
+    struct file_desc *t = list_entry(here, struct file_desc, elem);
+    if(t->fd == fd)
+    {
+      here = list_remove(&t->elem);
+    }
+    else
+      here = list_next(&t->elem);
+  }
+
+  lock_release(&file_system_lock);
 }
