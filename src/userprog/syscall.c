@@ -3,6 +3,7 @@
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
 #include "userprog/pagedir.h"
+#include "userprog/process.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -30,6 +31,8 @@ void
 assert_valid_ptr(void *p)
 {
   if(!is_user_vaddr(p) || (p < 0x08048000))
+    exit(-1);
+  if(!is_user_vaddr(p + 3) || (p + 3 < 0x08048000))
     exit(-1);
   if(!pagedir_is_accessed(thread_current()->pagedir, p))
     exit(-1);
@@ -145,7 +148,8 @@ exit (int status)
 pid_t
 exec (const char *cmd_line)
 {
-
+  assert_valid_ptr(cmd_line);
+  return process_execute(cmd_line);
 }
 
 /* Waits for a process which has the same Program ID as pid, and returns the
@@ -155,7 +159,7 @@ exec (const char *cmd_line)
 int
 wait (pid_t pid)
 {
-
+  thread_join(pid);
 }
 
 /* Creates a new file called file initially initial_size bytes in size. Returns

@@ -37,6 +37,9 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+/* Monitor used for waiting exec */
+struct monitor m;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -92,6 +95,8 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  lock_init (&m.exec_lock);
+  cond_init (&m.exec_flag);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -591,7 +596,7 @@ thread_join(tid_t tid)
 
   old_level = intr_disable ();
   
-  ASSERT(t != NULL);
+  if(t == NULL) return;
   list_push_back(&t->waiters, &thread_current()->elem);
   thread_block();
 
