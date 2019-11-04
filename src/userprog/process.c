@@ -143,7 +143,7 @@ process_wait (tid_t child_tid)
 
 /* Free the current process's resources. */
 void
-process_exit (bool isHalt)
+process_exit ()
 {
   struct list_elem *here, *end;
   struct thread *cur = thread_current ();
@@ -170,9 +170,9 @@ process_exit (bool isHalt)
   end = list_end(&cur->waiters);
   while(here != end)
   {
-    struct thread *t = list_entry(here, struct thread, waitelem);
+    struct thread *t = list_entry(here, struct thread, elem);
     
-    here = list_remove(&t->waitelem);
+    here = list_remove(&t->elem);
     thread_unblock(t);
   }
 }
