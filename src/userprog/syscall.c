@@ -4,6 +4,7 @@
 #include "threads/interrupt.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
+#include "filesys/file.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -49,7 +50,7 @@ syscall_handler(struct intr_frame *f)
   switch(*esp)
   {
   case SYS_HALT:
-    halt();
+    shutdown_power_off();
     break;
   case SYS_EXIT:
     assert_valid_ptr(esp+1);
@@ -61,7 +62,7 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_WAIT:
     assert_valid_ptr(esp+1);
-    f->eax = wait((pid_t) *(esp+1));
+    f->eax = process_wait((pid_t) *(esp+1));
     break;
   case SYS_CREATE:
     assert_valid_ptr(esp+2);
@@ -107,13 +108,6 @@ syscall_handler(struct intr_frame *f)
 
 }
 
-/* Terminates Pintos by calling shutdown_power_off(). */
-void
-halt (void)
-{
-  shutdown_power_off();
-}
-
 /* Terminates the current user program, returning status to the kernel */
 void
 exit (int status)
@@ -138,7 +132,6 @@ exit (int status)
   if(cur->type != 0)
     printf("%s: exit(%d)\n", cur->name, status);
 
-  
   thread_exit();
 }
 
@@ -150,16 +143,6 @@ exec (const char *cmd_line)
 {
   assert_valid_ptr(cmd_line);
   return process_execute(cmd_line);
-}
-
-/* Waits for a process which has the same Program ID as pid, and returns the
-   target process’s exit status. If the target process did not call exit(),
-   but was terminated by the kernel (e.g. killed due to an exception), wait
-   must return -1.  */
-int
-wait (pid_t pid)
-{
-  thread_join(pid);
 }
 
 /* Creates a new file called file initially initial_size bytes in size. Returns
@@ -229,7 +212,30 @@ open (const char *file)
 int
 filesize (int fd)
 {
+  int result = 0;
+  struct list_elem *here = list_begin(&file_list);
+  struct list_elem *end = list_end(&file_list);
+  
+  lock_acquire(&file_system_lock);
 
+  while(here != end)
+  {
+    struct file_desc *t = list_entry(here, struct file_desc, elem);
+    if(t->fd == fd)
+    {
+      if(t->owner == thread_current()->tid)
+        result = file_length(t->file);
+      else
+        result = 0;
+      break;
+    }
+    else
+      here = list_next(&t->elem);
+  }
+
+  lock_release(&file_system_lock);
+
+  return result;
 }
 
 /* Reads size bytes from the file open as fd into buffer. Returns the number
@@ -261,11 +267,28 @@ read (int fd, void *buffer, unsigned size)
   }
   else
   {
-    // Readf attempt from file
-    // TODO
+    // Read attempt from file
+    struct list_elem *here = list_begin(&file_list);
+    struct list_elem *end = list_end(&file_list);
+
+    while(here != end) {
+      struct file_desc *t = list_entry(here, struct file_desc, elem);
+      if(t->fd == fd) {
+        if(t->owner == thread_current()->tid)
+          read_size = file_read(t->file, buffer, size);
+        else
+          read_size = 0;
+        break;
+      }
+      else {
+        here = list_next(&t->elem);
+      }
+    }
   }
 
   lock_release(&file_system_lock);
+
+  return read_size;
 }
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
@@ -297,7 +320,22 @@ write (int fd, const void *buffer, unsigned size)
   else
   {
     // Write attempt to file
-    // TODO
+    struct list_elem *here = list_begin(&file_list);
+    struct list_elem *end = list_end(&file_list);
+
+    while(here != end) {
+      struct file_desc *t = list_entry(here, struct file_desc, elem);
+      if(t->fd == fd) {
+        if(t->owner == thread_current()->tid)
+          write_size = file_write(t->file, buffer, size);
+        else
+          write_size = 0;
+        break;
+      }
+      else {
+        here = list_next(&t->elem);
+      }
+    }
   }
   
   lock_release(&file_system_lock);
@@ -311,7 +349,25 @@ write (int fd, const void *buffer, unsigned size)
 void
 seek (int fd, unsigned position)
 {
+  struct list_elem *here = list_begin(&file_list);
+  struct list_elem *end = list_end(&file_list);
+  
+  lock_acquire(&file_system_lock);
 
+  while(here != end)
+  {
+    struct file_desc *t = list_entry(here, struct file_desc, elem);
+    if(t->fd == fd)
+    {
+      if(t->owner == thread_current()->tid)
+        file_seek(t->file, position);
+      break;
+    }
+    else
+      here = list_next(&t->elem);
+  }
+
+  lock_release(&file_system_lock);
 }
 
 /* Returns the position of the next byte to be read or written in open file
@@ -319,7 +375,25 @@ seek (int fd, unsigned position)
 unsigned
 tell (int fd)
 {
+  struct list_elem *here = list_begin(&file_list);
+  struct list_elem *end = list_end(&file_list);
+  
+  lock_acquire(&file_system_lock);
 
+  while(here != end)
+  {
+    struct file_desc *t = list_entry(here, struct file_desc, elem);
+    if(t->fd == fd)
+    {
+      if(t->owner == thread_current()->tid)
+        file_tell(t->file);
+      break;
+    }
+    else
+      here = list_next(&t->elem);
+  }
+
+  lock_release(&file_system_lock);
 }
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly
