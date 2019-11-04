@@ -95,9 +95,10 @@ struct thread
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
-    int type;                           /* Thread type */
+    int type;                           /* Thread type. */
     uint32_t *pagedir;                  /* Page directory. */
-    struct list waiters;                /* Thread waiters list */
+
+    struct list waiters;                /* Thread waiters list. */
     struct list_elem waitelem;          /* List element for thread waiters list. */
 #endif
 

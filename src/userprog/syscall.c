@@ -2,9 +2,15 @@
 #include <stdio.h>
 #include <syscall-nr.h>
 #include "threads/interrupt.h"
-#include "threads/thread.h"
 
 static void syscall_handler (struct intr_frame *);
+
+/* Global list of open files. */
+struct list file_list;
+
+/* Only a single thread(either user or kernel) can access the file system
+   at any time. */
+struct lock file_system_lock;
 
 void
 syscall_init (void) 
@@ -36,31 +42,51 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_EXIT:
     assert_valid_ptr(esp+1);
-    exit(*(esp+1));
+    exit((int) *(esp+1));
     break;
   case SYS_EXEC:
+    assert_valid_ptr(esp+1);
+    f->eax = exec((const char *) *(esp+1));
     break;
   case SYS_WAIT:
+    assert_valid_ptr(esp+1);
+    f->eax = wait((pid_t) *(esp+1));
     break;
   case SYS_CREATE:
+    assert_valid_ptr(esp+2);
+    f->eax = create((const char *) *(esp+1), (unsigned  int) *(esp+2));
     break;
   case SYS_REMOVE:
+    assert_valid_ptr(esp+1);
+    f->eax = remove((const char *) *(esp+1));
     break;
   case SYS_OPEN:
+    assert_valid_ptr(esp+1);
+    f->eax = open((const char *) *(esp+1));
     break;
   case SYS_FILESIZE:
+    assert_valid_ptr(esp+1);
+    f->eax = filesize((int) *(esp+1));
     break;
   case SYS_READ:
+    assert_valid_ptr(esp+3);
+    f->eax = read((int) *(esp+1), (void *) *(esp+2), (unsigned int) *(esp+3));
     break;
   case SYS_WRITE:
     assert_valid_ptr(esp+3);
-    f->eax = write(*(esp+1), (const void *) *(esp+2), (unsigned int) *(esp+3));
+    f->eax = write((int) *(esp+1), (const void *) *(esp+2), (unsigned int) *(esp+3));
     break;
   case SYS_SEEK:
+    assert_valid_ptr(esp+2);
+    seek((int) *(esp+1), (unsigned int) *(esp+1));
     break;
   case SYS_TELL:
+    assert_valid_ptr(esp+1);
+    f->eax = tell((int) *(esp+1));
     break;
   case SYS_CLOSE:
+    assert_valid_ptr(esp+1);
+    close((int) *(esp+1));
     break;
   default:
     exit(-1);
@@ -82,7 +108,8 @@ void
 exit (int status)
 {
   struct thread *cur = thread_current();
-  if(cur->type != 0) printf("%s: exit(%d)\n", cur->name, status);
+  if(cur->type != 0)
+    printf("%s: exit(%d)\n", cur->name, status);
   thread_exit();
 }
 
@@ -110,14 +137,28 @@ wait (pid_t pid)
 bool
 create (const char *file, unsigned initial_size)
 {
+  bool status;
+  assert_valid_ptr(file);
 
+  lock_acquire(&file_system_lock);
+  status = filesys_create(file, initial_size);
+  lock_release(&file_system_lock);
+
+  return status;
 }
 
 /* Deletes the file called file. Returns true if successful, false otherwise. */
 bool
 remove (const char *file)
 {
+  bool status;
+  assert_valid_ptr(file);
 
+  lock_acquire(&file_system_lock);
+  status = filesys_remove(file);
+  lock_release(&file_system_lock);
+
+  return status; 
 }
 
 /* Opens the file called file. Returns a nonnegative integer handle called a
@@ -125,7 +166,19 @@ remove (const char *file)
 int
 open (const char *file)
 {
+  struct file_desc *fd;
+  struct file *f;
+  assert_valid_ptr(file);
 
+  lock_acquire(&file_system_lock);
+  f = filesys_open(file);
+  if(f != NULL)
+  {
+    fd = malloc(sizeof(struct file_desc));
+    // TODO
+  }
+
+  lock_release(&file_system_lock);
 }
 
 /* : Returns the size, in bytes, of the file open as fd. */

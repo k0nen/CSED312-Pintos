@@ -2,13 +2,19 @@
 #define USERPROG_SYSCALL_H
 
 #include <stdbool.h>
-#include <user/syscall.h>
-#include <threads/synch.h>
-#include <threads/vaddr.h>
+#include "user/syscall.h"
+#include "threads/synch.h"
+#include "threads/vaddr.h"
+#include "threads/thread.h"
+#include "filesys/filesys.h"
 
-/* Only a single thread(either user or kernel) can access the file system
-   at any time. */
-struct lock file_system_lock;
+struct file_desc
+  {
+    int fd;                             /* File descriptor. */
+    tid_t owner;                        /* Owner of this file. */
+    struct file *file;                  /* Pointer to struct file. */
+    struct list_elem elem;              /* List element for file_list. */
+  };
 
 /* Utility functions */
 void assert_valid_ptr(void *p);
