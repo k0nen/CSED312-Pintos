@@ -15,4 +15,8 @@ Run `sudo apt-get install binutils pkg-config zlib1g-dev libglib2.0-dev gcc libc
 
 7. Move to `src/threads/build/`, check if `pintos --qemu -- run alarm-multiple` runs correctly.
 
+## Setup for project 2
 
+1. Do every setup from project 1.
+2. Open `src/utils/pintos`, change `kernel.bin` on line 257 to `$PINTOS_ROOT/src/userprog/build/kernel.bin`. Expand `$PINTOS_ROOT` to actual path.
+3. Open `src/utils/Pintos.pm`, change `loader.bin` on line 362 to `$PINTOS_ROOT/src/userprog/build/loader.bin`. Expand `$PINTOS_ROOT` to actual path.
