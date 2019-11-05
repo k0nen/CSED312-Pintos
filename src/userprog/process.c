@@ -56,7 +56,6 @@ process_execute (const char *file_name)
     struct child *c = malloc(sizeof(struct child));
 
     if(c == NULL) {
-      // lock_release(&child_list_lock);
       exit(-1);
     }
     else {
@@ -170,16 +169,25 @@ start_process (void *file_name_)
   memset(if_.esp, 0, 4);
 
   palloc_free_page (file_name);
+
+  /* Deny write to this file. */
+  cur->fp = filesys_open(argv[0]);
+  if(cur->fp != NULL)
+  {
+    file_deny_write(cur->fp);
+  }
+
+  /* Return exec status to parent. */
+  c->exec_code = 0;
+  cond_signal(&c->exec_flag, &c->exec_lock);
+  lock_release(&c->exec_lock);
+
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
      threads/intr-stubs.S).  Because intr_exit takes all of its
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
-  c->exec_code = 0;
-  cond_signal(&c->exec_flag, &c->exec_lock);
-  lock_release(&c->exec_lock);
-
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
@@ -230,6 +238,14 @@ process_exit (int status)
   struct list_elem *here, *end;
   struct thread *cur = thread_current ();
   uint32_t *pd;
+
+  /* Re-enable write to this file. */
+  if(cur->fp != NULL)
+  {
+    file_allow_write(cur->fp);
+    file_close(cur->fp);
+  }
+
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

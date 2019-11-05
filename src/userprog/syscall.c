@@ -340,7 +340,9 @@ write (int fd, const void *buffer, unsigned size)
       struct file_desc *t = list_entry(here, struct file_desc, elem);
       if(t->fd == fd) {
         if(t->owner == thread_current()->tid)
+        {
           write_size = file_write(t->file, buffer, size);
+        }
         else
           write_size = 0;
         break;
@@ -428,6 +430,7 @@ close (int fd)
     struct file_desc *t = list_entry(here, struct file_desc, elem);
     if(t->fd == fd)
     {
+      file_close(t->file);
       here = list_remove(&t->elem);
     }
     else
