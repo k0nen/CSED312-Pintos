@@ -37,9 +37,6 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
-/* Monitor used for waiting exec */
-struct monitor m;
-
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -95,8 +92,6 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
-  lock_init (&m.exec_lock);
-  cond_init (&m.exec_flag);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -290,10 +285,6 @@ void
 thread_exit (void) 
 {
   ASSERT (!intr_context ());
-
-#ifdef USERPROG
-  process_exit ();
-#endif
 
   /* Remove thread from all threads list, set our status to dying,
      and schedule another process.  That process will destroy us
@@ -595,8 +586,9 @@ thread_join(tid_t tid)
   enum intr_level old_level;
 
   old_level = intr_disable ();
-  
-  if(t == NULL) return;
+
+  if(t == NULL)
+    return;
   list_push_back(&t->waiters, &thread_current()->elem);
   thread_block();
 

@@ -111,14 +111,6 @@ struct thread
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
 
-/* Monitor for waiting child process loading */
-struct monitor
-{
-	struct lock exec_lock;
-	struct condition exec_flag;
-  int exit_code;
-};
-
 void thread_init (void);
 void thread_start (void);
 

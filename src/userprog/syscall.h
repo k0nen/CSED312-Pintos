@@ -16,6 +16,17 @@ struct file_desc
     struct list_elem elem;              /* List element for file_list. */
   };
 
+struct child
+  {
+    tid_t parent_id, child_id;          /* tid of parent/child. */
+    bool is_dead;						            /* Status of child process. */
+    struct lock exec_lock;
+	  struct condition exec_flag;
+    int exec_code;                      /* Execution code of child process. */
+    int exit_code;                      /* Exit code of child process. */
+    struct list_elem elem;         /* List element for child_list. */
+  };
+
 /* Utility functions */
 void assert_valid_ptr(void *p);
 

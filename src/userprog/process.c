@@ -22,6 +22,10 @@ static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 extern struct monitor m;
 
+/* Global list of parent-child relationships. */
+extern struct list child_list;
+extern struct lock child_list_lock;
+
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
@@ -32,7 +36,6 @@ process_execute (const char *file_name)
   char *fn_copy;
   tid_t tid;
 
-  lock_acquire(&m.exec_lock);
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
@@ -41,14 +44,37 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
+
+  lock_acquire(&child_list_lock);
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  cond_wait(&m.exec_flag, &m.exec_lock);
+  lock_release(&child_list_lock);
 
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
-  if (m.exit_code != 0) tid = TID_ERROR;
-  
-  lock_release(&m.exec_lock);
+  else
+  {
+    struct child *c = malloc(sizeof(struct child));
+
+    if(c == NULL) {
+      // lock_release(&child_list_lock);
+      exit(-1);
+    }
+    else {
+      lock_init(&c->exec_lock);
+      cond_init(&c->exec_flag);
+      c->parent_id = thread_current()->tid;
+      c->child_id = tid;
+      c->is_dead = false;
+      list_push_back(&child_list, &c->elem);
+
+      lock_acquire(&c->exec_lock);
+      cond_wait(&c->exec_flag, &c->exec_lock);
+      if(c->exec_code != 0)
+        tid = TID_ERROR;
+      lock_release(&c->exec_lock);
+    }
+  }
+
   return tid;
 }
 
@@ -63,9 +89,26 @@ start_process (void *file_name_)
   int argc, total_size;
   char *token, *save_ptr;
   void *addr, *argv[100];
+  struct thread *cur = thread_current();
+  struct list_elem *here, *end;
+  struct child *c;
 
-  lock_acquire(&m.exec_lock);
-  thread_current()->type = 1;
+  lock_acquire(&child_list_lock);
+  here = list_begin(&child_list);
+  end = list_end(&child_list);
+
+  while(here != end)
+  {
+    c = list_entry(here, struct child, elem);
+    if(c->child_id == cur->tid)
+      break;
+    else here = list_next(&c->elem);
+  }
+  ASSERT(here != end);
+  lock_acquire(&c->exec_lock);
+  cur->type = 1;
+
+  lock_release(&child_list_lock);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -88,10 +131,10 @@ start_process (void *file_name_)
       if (!success) 
       {
         palloc_free_page (file_name);
-        m.exit_code = -1;
 
-        cond_signal(&m.exec_flag, &m.exec_lock);
-        lock_release(&m.exec_lock);
+        c->exec_code = -1;
+        cond_signal(&c->exec_flag, &c->exec_lock);
+        lock_release(&c->exec_lock);
         exit(-1);
       }
     }
@@ -133,9 +176,9 @@ start_process (void *file_name_)
      arguments on the stack in the form of a `struct intr_frame',
      we just point the stack pointer (%esp) to our stack frame
      and jump to it. */
-  m.exit_code = 0;
-  cond_signal(&m.exec_flag, &m.exec_lock);
-  lock_release(&m.exec_lock);
+  c->exec_code = 0;
+  cond_signal(&c->exec_flag, &c->exec_lock);
+  lock_release(&c->exec_lock);
 
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
@@ -153,13 +196,36 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid) 
 {
-  thread_join(child_tid);
-  return -1;
+  int exit_code = -1;
+
+  struct thread *cur = thread_current();
+  struct list_elem *here, *end;
+
+  /* If child is alive, wait for it to end. */
+  here = list_begin(&child_list);
+  end = list_end(&child_list);
+
+  while(here != end)
+  {
+    struct child *c = list_entry(here, struct child, elem);
+    if(c->child_id == child_tid)
+    {
+      if(!c->is_dead)
+        thread_join(child_tid);
+      exit_code = c->exit_code;
+      here = list_remove(&c->elem);
+      break;
+    }
+    else
+      here = list_next(&c->elem);
+  }
+
+  return exit_code;
 }
 
 /* Free the current process's resources. */
 void
-process_exit ()
+process_exit (int status)
 {
   struct list_elem *here, *end;
   struct thread *cur = thread_current ();
@@ -187,9 +253,27 @@ process_exit ()
   while(here != end)
   {
     struct thread *t = list_entry(here, struct thread, elem);
-    
     here = list_remove(&t->elem);
     thread_unblock(t);
+  }
+
+  here = list_begin(&child_list);
+  end = list_end(&child_list);
+  while(here != end)
+  {
+    struct child *c = list_entry(here, struct child, elem);
+
+    if(c->parent_id == cur->tid) {
+      here = list_remove(&c->elem);
+    }
+    else if(c->child_id == cur->tid) {
+      c->exit_code = status;
+      c->is_dead = true;
+      here = list_next(&c->elem);
+    }
+    else {
+      here = list_next(&c->elem);
+    }
   }
 }
 

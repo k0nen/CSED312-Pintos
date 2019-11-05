@@ -14,6 +14,10 @@ struct list file_list;
 /* Global fd counter. */
 unsigned int fd_counter = 2;
 
+/* Global list of parent-child relationships. */
+struct list child_list;
+struct lock child_list_lock;
+
 /* Only a single thread(either user or kernel) can access the file system
    at any time. */
 struct lock file_system_lock;
@@ -25,6 +29,8 @@ syscall_init (void)
   intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
   lock_init(&file_system_lock);
   list_init(&file_list);
+  list_init(&child_list);
+  lock_init(&child_list_lock);
 }
 
 /* Assures that the given pointer is valid. Otherwise, terminate process. */
@@ -132,6 +138,7 @@ exit (int status)
   if(cur->type != 0)
     printf("%s: exit(%d)\n", cur->name, status);
 
+  process_exit(status);
   thread_exit();
 }
 
@@ -191,13 +198,17 @@ open (const char *file)
   if(f != NULL)
   {
     fd = malloc(sizeof(struct file_desc));
+    if(fd == NULL) {
+      status = -1;
+    }
+    else {
+      fd->fd = fd_counter++;
+      fd->owner = thread_current()->tid;
+      fd->file = f;
+      list_push_back(&file_list, &fd->elem);
 
-    fd->fd = fd_counter++;
-    fd->owner = thread_current()->tid;
-    fd->file = f;
-    list_push_back(&file_list, &fd->elem);
-
-    status = fd->fd;
+      status = fd->fd;
+    }
   }
   else
   {
@@ -375,6 +386,7 @@ seek (int fd, unsigned position)
 unsigned
 tell (int fd)
 {
+  unsigned status = 0;
   struct list_elem *here = list_begin(&file_list);
   struct list_elem *end = list_end(&file_list);
   
@@ -386,7 +398,7 @@ tell (int fd)
     if(t->fd == fd)
     {
       if(t->owner == thread_current()->tid)
-        file_tell(t->file);
+        status = file_tell(t->file);
       break;
     }
     else
@@ -394,6 +406,8 @@ tell (int fd)
   }
 
   lock_release(&file_system_lock);
+
+  return status;
 }
 
 /* Closes file descriptor fd. Exiting or terminating a process implicitly
