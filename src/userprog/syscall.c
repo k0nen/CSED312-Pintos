@@ -132,6 +132,7 @@ exit (int status)
     {
       file_close(t->file);
       here = list_remove(&t->elem);
+      free(t);
     }
     else
       here = list_next(&t->elem);
@@ -384,7 +385,6 @@ seek (int fd, unsigned position)
     {
       if(t->owner == thread_current()->tid)
         file_seek(t->file, position);
-      else ASSERT(0);
       break;
     }
     else
@@ -439,8 +439,13 @@ close (int fd)
     struct file_desc *t = list_entry(here, struct file_desc, elem);
     if(t->fd == fd)
     {
-      file_close(t->file);
-      here = list_remove(&t->elem);
+      if(t->owner == thread_current()->tid)
+      {
+        file_close(t->file);
+        here = list_remove(&t->elem);
+        free(t);
+      }
+      break;
     }
     else
       here = list_next(&t->elem);

@@ -133,7 +133,7 @@ start_process (void *file_name_)
 
         c->exec_code = -1;
         cond_signal(&c->exec_flag, &c->exec_lock);
-        lock_release(&c->exec_lock);
+        lock_release(&c->exec_lock);\
         exit(-1);
       }
     }
@@ -281,6 +281,7 @@ process_exit (int status)
 
     if(c->parent_id == cur->tid) {
       here = list_remove(&c->elem);
+      free(c);
     }
     else if(c->child_id == cur->tid) {
       c->exit_code = status;
