@@ -7,6 +7,7 @@
 #include "threads/vaddr.h"
 #include "threads/thread.h"
 #include "filesys/filesys.h"
+#include "filesys/inode.h"
 
 struct file_desc
   {

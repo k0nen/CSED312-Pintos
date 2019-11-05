@@ -98,7 +98,7 @@ syscall_handler(struct intr_frame *f)
     break;
   case SYS_SEEK:
     assert_valid_ptr(esp+2);
-    seek((int) *(esp+1), (unsigned int) *(esp+1));
+    seek((int) *(esp+1), (unsigned) *(esp+2));
     break;
   case SYS_TELL:
     assert_valid_ptr(esp+1);
@@ -130,6 +130,7 @@ exit (int status)
     struct file_desc *t = list_entry(here, struct file_desc, elem);
     if(t->owner == cur->tid)
     {
+      file_close(t->file);
       here = list_remove(&t->elem);
     }
     else
@@ -288,7 +289,11 @@ read (int fd, void *buffer, unsigned size)
       struct file_desc *t = list_entry(here, struct file_desc, elem);
       if(t->fd == fd) {
         if(t->owner == thread_current()->tid)
+        {
+          file_reopen(t->file);
           read_size = file_read(t->file, buffer, size);
+          file_reopen(t->file);
+        }
         else
           read_size = 0;
         break;
@@ -303,6 +308,7 @@ read (int fd, void *buffer, unsigned size)
 
   return read_size;
 }
+
 
 /* Writes size bytes from buffer to the open file fd. Returns the number of
    bytes actually written. The expected behavior is to write as many bytes
@@ -341,7 +347,9 @@ write (int fd, const void *buffer, unsigned size)
       if(t->fd == fd) {
         if(t->owner == thread_current()->tid)
         {
+          file_reopen(t->file);
           write_size = file_write(t->file, buffer, size);
+          file_reopen(t->file);
         }
         else
           write_size = 0;
@@ -376,6 +384,7 @@ seek (int fd, unsigned position)
     {
       if(t->owner == thread_current()->tid)
         file_seek(t->file, position);
+      else ASSERT(0);
       break;
     }
     else
