@@ -41,7 +41,9 @@ assert_valid_ptr(void *p)
     exit(-1);
   if(!is_user_vaddr(p + 3) || (p + 3 < 0x08048000))
     exit(-1);
-  if(!pagedir_is_accessed(thread_current()->pagedir, p))
+  if(pagedir_get_page(thread_current()->pagedir, p) == NULL)
+    exit(-1);
+  if(pagedir_get_page(thread_current()->pagedir, p + 3) == NULL)
     exit(-1);
 }
 
@@ -260,7 +262,7 @@ read (int fd, void *buffer, unsigned size)
 
   // Buffer validity check
   assert_valid_ptr(buffer);
-  assert_valid_ptr(buffer + size);
+  assert_valid_ptr(buffer + size - 1);
 
   lock_acquire(&file_system_lock);
 
