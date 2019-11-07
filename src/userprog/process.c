@@ -273,6 +273,7 @@ process_exit (int status)
     thread_unblock(t);
   }
 
+  lock_acquire(&child_list_lock);
   here = list_begin(&child_list);
   end = list_end(&child_list);
   while(here != end)
@@ -292,6 +293,7 @@ process_exit (int status)
       here = list_next(&c->elem);
     }
   }
+  lock_release(&child_list_lock);
 }
 
 /* Sets up the CPU for running user code in the current
