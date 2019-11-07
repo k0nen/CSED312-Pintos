@@ -44,10 +44,7 @@ process_execute (const char *file_name)
   strlcpy (fn_copy, file_name, PGSIZE);
 
   /* Create a new thread to execute FILE_NAME. */
-
-  lock_acquire(&child_list_lock);
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  lock_release(&child_list_lock);
 
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
@@ -64,6 +61,7 @@ process_execute (const char *file_name)
       c->parent_id = thread_current()->tid;
       c->child_id = tid;
       c->is_dead = false;
+      c->exit_code = -2;
       list_push_back(&child_list, &c->elem);
 
       lock_acquire(&c->exec_lock);
@@ -91,8 +89,8 @@ start_process (void *file_name_)
   struct thread *cur = thread_current();
   struct list_elem *here, *end;
   struct child *c;
+  bool is_parent_dead = false;
 
-  lock_acquire(&child_list_lock);
   here = list_begin(&child_list);
   end = list_end(&child_list);
 
@@ -103,11 +101,13 @@ start_process (void *file_name_)
       break;
     else here = list_next(&c->elem);
   }
-  ASSERT(here != end);
-  lock_acquire(&c->exec_lock);
-  cur->type = 1;
 
-  lock_release(&child_list_lock);
+  if(here == end)
+    is_parent_dead = true;
+  else
+    lock_acquire(&c->exec_lock);
+
+  cur->type = 1;
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -131,9 +131,12 @@ start_process (void *file_name_)
       {
         palloc_free_page (file_name);
 
-        c->exec_code = -1;
-        cond_signal(&c->exec_flag, &c->exec_lock);
-        lock_release(&c->exec_lock);\
+        if(!is_parent_dead)
+        {
+          c->exec_code = -1;
+          cond_signal(&c->exec_flag, &c->exec_lock);
+          lock_release(&c->exec_lock);
+        }
         exit(-1);
       }
     }
@@ -178,9 +181,12 @@ start_process (void *file_name_)
   }
 
   /* Return exec status to parent. */
-  c->exec_code = 0;
-  cond_signal(&c->exec_flag, &c->exec_lock);
-  lock_release(&c->exec_lock);
+  if(!is_parent_dead)
+  {
+    c->exec_code = 0;
+    cond_signal(&c->exec_flag, &c->exec_lock);
+    lock_release(&c->exec_lock);
+  }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -216,12 +222,13 @@ process_wait (tid_t child_tid)
   while(here != end)
   {
     struct child *c = list_entry(here, struct child, elem);
-    if(c->child_id == child_tid)
+    if(c->parent_id == cur->tid && c->child_id == child_tid)
     {
       if(!c->is_dead)
         thread_join(child_tid);
       exit_code = c->exit_code;
       here = list_remove(&c->elem);
+      free(c);
       break;
     }
     else
@@ -264,15 +271,6 @@ process_exit (int status)
       pagedir_destroy (pd);
     }
 
-  here = list_begin(&cur->waiters);
-  end = list_end(&cur->waiters);
-  while(here != end)
-  {
-    struct thread *t = list_entry(here, struct thread, elem);
-    here = list_remove(&t->elem);
-    thread_unblock(t);
-  }
-
   lock_acquire(&child_list_lock);
   here = list_begin(&child_list);
   end = list_end(&child_list);
@@ -294,6 +292,17 @@ process_exit (int status)
     }
   }
   lock_release(&child_list_lock);
+
+  lock_acquire(&cur->wait_lock);
+  here = list_begin(&cur->waiters);
+  end = list_end(&cur->waiters);
+  while(here != end)
+  {
+    struct thread *t = list_entry(here, struct thread, waitelem);
+    here = list_remove(&t->waitelem);
+    thread_unblock(t);
+  }
+  lock_release(&cur->wait_lock);
 }
 
 /* Sets up the CPU for running user code in the current

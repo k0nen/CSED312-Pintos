@@ -121,8 +121,12 @@ void
 exit (int status)
 {
   struct thread *cur = thread_current();
-  struct list_elem *here = list_begin(&file_list);
-  struct list_elem *end = list_end(&file_list);
+  struct list_elem *here, *end;
+  
+  lock_acquire(&file_system_lock);
+
+  here = list_begin(&file_list);
+  end = list_end(&file_list);
 
   /* Delete current process' open file descriptors. */
   while(here != end)
@@ -137,10 +141,12 @@ exit (int status)
     else
       here = list_next(&t->elem);
   }
+  lock_release(&file_system_lock);
 
   /* Print exit message. */
-  if(cur->type != 0)
+  if(cur->type != 0) {
     printf("%s: exit(%d)\n", cur->name, status);
+  }
 
   process_exit(status);
   thread_exit();
@@ -206,7 +212,8 @@ open (const char *file)
       status = -1;
     }
     else {
-      fd->fd = fd_counter++;
+      fd->fd = fd_counter;
+      fd_counter++;
       fd->owner = thread_current()->tid;
       fd->file = f;
       list_push_back(&file_list, &fd->elem);

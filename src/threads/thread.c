@@ -200,6 +200,7 @@ thread_create (const char *name, int priority,
 
 #ifdef USERPROG
   list_init(&t->waiters);
+  lock_init(&t->wait_lock);
 #endif
 
   /* Add to run queue. */
@@ -588,8 +589,13 @@ thread_join(tid_t tid)
   old_level = intr_disable ();
 
   if(t == NULL)
+  {
+    intr_set_level (old_level);
     return;
-  list_push_back(&t->waiters, &thread_current()->elem);
+  }
+  lock_acquire(&t->wait_lock);
+  list_push_back(&t->waiters, &thread_current()->waitelem);
+  lock_release(&t->wait_lock);
   thread_block();
 
   intr_set_level (old_level);

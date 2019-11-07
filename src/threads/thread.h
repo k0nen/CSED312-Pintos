@@ -99,6 +99,8 @@ struct thread
     int type;                           /* Thread type. */
     uint32_t *pagedir;                  /* Page directory. */
     struct list waiters;                /* Thread waiters list */
+    struct lock wait_lock;              /* Lock for waiters list */
+    struct list_elem waitelem;          /* List element for thread waiters list. */
     struct file *fp;                    /* Pointer to program's file */
 
 #endif
