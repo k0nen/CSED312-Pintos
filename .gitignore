@@ -1,5 +1,6 @@
 specs/
 doc/
+.vscode/
 
 # Path-specific settings
 src/threads/Make.vars
