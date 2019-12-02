@@ -20,6 +20,8 @@
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "userprog/syscall.h"
+#include "vm/frame.h"
+#include "vm/page.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -67,6 +69,9 @@ start_process (void *file_name_)
   bool success;
   
   void **esp = &if_.esp;
+
+  list_init(&thread_current()->frames);
+  page_table_init();
   
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -195,6 +200,14 @@ process_exit (void)
       pagedir_activate (NULL);
       pagedir_destroy (pd);
     }
+
+  for(e = list_begin(&cur->frames); e != list_end(&cur->frames);)
+  {
+    struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
+    e = list_remove(e);
+    // palloc_free_page(frame->physical_address);
+    palloc_free_page(frame);
+  }
 }
 
 /* Sets up the CPU for running user code in the current
@@ -477,30 +490,44 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       /* Calculate how to fill this page.
          We will read PAGE_READ_BYTES bytes from FILE
          and zero the final PAGE_ZERO_BYTES bytes. */
+      struct page_entry *page = malloc(sizeof(struct page_entry));
       size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      /* Get a page of memory. */
-      uint8_t *kpage = palloc_get_page (PAL_USER);
-      if (kpage == NULL)
-        return false;
+      page->virtual_address = upage;
+      page->frame = NULL;
+      page->zero_bytes = page_zero_bytes;
+      page->file = file;
+      page->file_offset = ofs;
+      page->is_pinned = false;
+      page->is_swap = false;
+      page->is_writable = writable;
 
-      /* Load this page. */
-      if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
-      memset (kpage + page_read_bytes, 0, page_zero_bytes);
+      ofs += page_read_bytes;
+      hash_insert(&thread_current()->page_table, &page->hash);
 
-      /* Add the page to the process's address space. */
-      if (!install_page (upage, kpage, writable)) 
-        {
-          palloc_free_page (kpage);
-          return false; 
-        }
+      // /* Get a page of memory. */
+      // struct frame_entry *frame = get_new_frame();
+      // uint8_t *kpage = frame->physical_address;// palloc_get_page (PAL_USER);
+      // if (kpage == NULL)
+      //   return false;
 
-      /* Advance. */
+      // /* Load this page. */
+      // if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
+      //   {
+      //     palloc_free_page (kpage);
+      //     return false; 
+      //   }
+      // memset (kpage + page_read_bytes, 0, page_zero_bytes);
+
+      // /* Add the page to the process's address space. */
+      // if (!install_page (upage, kpage, writable)) 
+      //   {
+      //     palloc_free_page (kpage);
+      //     return false; 
+      //   }
+
+      // /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;

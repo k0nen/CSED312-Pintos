@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "vm/frame.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -105,6 +106,11 @@ struct thread
     struct list fd_table;
 
     struct file *current_file;
+#endif
+#ifdef VM
+    struct list frames;
+    struct hash page_table; // Supplemental page table
+    void *current_esp;
 #endif
 
     /* Owned by thread.c. */
