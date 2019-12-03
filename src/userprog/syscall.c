@@ -8,6 +8,7 @@
 #include "userprog/process.h"
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
+#include "threads/palloc.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -30,7 +31,9 @@ static void (*syscall_table[20])(struct intr_frame*) = {
   sys_write,
   sys_seek,
   sys_tell,
-  sys_close
+  sys_close,
+  sys_mmap,
+  sys_munmap
 }; // syscall jmp table
 
 /* Reads a byte at user virtual address UADDR.
@@ -409,7 +412,7 @@ void sys_close (struct intr_frame * f) {
   lock_acquire(&file_lock);
   file_close(file);
   lock_release(&file_lock);
-  
+
   for (e = list_begin (&t->fd_table); e != list_end (&t->fd_table);
        e = list_next (e))
   {
@@ -418,6 +421,131 @@ void sys_close (struct intr_frame * f) {
       list_remove(e);
       free(fd_elem);
       return;
+    }
+  }
+}
+
+void
+sys_mmap(struct intr_frame *f)
+{
+  int fd;
+  int file_size;
+  int aligned_file_size;
+  void *addr;
+  struct file *file;
+  struct hash_iterator i;
+
+  if(!validate_read(f->esp + 4, 4)) kill_process();
+  fd = *(int *)(f->esp + 4);
+
+  if(!validate_read(f->esp + 8, 4)) kill_process();
+  addr = *(void **)(f->esp + 8);
+
+  if(fd == 0 || fd == 1 || addr == 0x0 || (unsigned) addr % PGSIZE != 0)
+  {
+    f->eax = -1;
+    return;
+  }
+  
+  file = get_file_from_fd(fd);
+  file_size = file_length(file);
+  aligned_file_size = file_size / PGSIZE * PGSIZE + (file_size % PGSIZE ? PGSIZE : 0);
+  if(file == NULL || file_size == 0)
+  {
+    f->eax = -1;
+    return;
+  }
+
+  hash_first(&i, &thread_current()->page_table);
+  while(hash_next(&i))
+  {
+    struct page_entry *vpage = hash_entry(hash_cur(&i), struct page_entry, hash);
+
+    void *vaddr = vpage->virtual_address;
+    if(addr + aligned_file_size - 1 >= vaddr && vaddr + PGSIZE - 1 >= addr)
+    {
+      f->eax = -1;
+      return;
+    }
+  }
+
+  if((unsigned) addr + aligned_file_size - 1 >= (unsigned) PHYS_BASE - 0x800000 && PHYS_BASE - 1 >= addr)
+  {
+    f->eax = -1;
+    return;
+  }
+
+  int page_count = 0;
+  while(file_size > 0)
+  {
+    struct page_entry *page = malloc(sizeof(struct page_entry));
+    size_t page_read_bytes = (file_size % PGSIZE == 0 ? PGSIZE : file_size % PGSIZE);
+    size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+    page->virtual_address = addr + PGSIZE * page_count;
+    page->frame = NULL;
+    page->zero_bytes = page_zero_bytes;
+    page->file = file;
+    page->file_offset = PGSIZE * page_count;
+    page->is_pinned = false;
+    page->is_swap = false;
+    page->is_writable = true;
+
+    hash_insert(&thread_current()->page_table, &page->hash);
+    file_size -= PGSIZE;
+    page_count++;
+  }
+
+  f->eax = fd;
+  return;
+}
+
+void 
+sys_munmap (struct intr_frame *f)
+{
+  int fd;
+  struct file *file;
+  struct hash_iterator prev, here;
+
+  if(!validate_read(f->esp + 4, 4)) kill_process();
+  fd = *(int *)(f->esp + 4);
+
+  file = get_file_from_fd(fd);
+  if(file == NULL)
+  {
+    return;
+  }
+
+  hash_first(&here, &thread_current()->page_table);
+  while(1)
+  {
+    struct page_entry *vpage = hash_entry(hash_cur(&here), struct page_entry, hash);
+    if(vpage->file == file)
+    {
+      struct frame_entry *frame = vpage->frame;
+      if(frame != NULL)
+      {
+        palloc_free_page(frame->physical_address);
+        palloc_free_page(frame);
+      }
+
+      prev = here;
+      if(!hash_next(&here))
+      {
+        hash_delete(&thread_current()->page_table, hash_cur(&prev));
+        free(vpage);
+        break;
+      }
+
+      hash_delete(&thread_current()->page_table, hash_cur(&prev));
+      free(vpage);
+    }
+    else
+    {
+      if(!hash_next(&here))
+      {
+        break;
+      }
     }
   }
 }

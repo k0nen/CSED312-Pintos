@@ -73,6 +73,16 @@ exception_print_stats (void)
   printf ("Exception: %lld page faults\n", page_fault_cnt);
 }
 
+static void
+kill_message(void *fault_addr, bool not_present, bool write, bool user)
+{
+  printf ("Page fault at %p: %s error %s page in %s context.\n",
+           fault_addr,
+           not_present ? "not present" : "rights violation",
+           write ? "writing" : "reading",
+           user ? "user" : "kernel");
+}
+
 /* Handler for an exception (probably) caused by a user process. */
 static void
 kill (struct intr_frame *f) 
@@ -170,13 +180,13 @@ page_fault (struct intr_frame *f)
 
   dummy_page.virtual_address = base_fault_addr;
   elem = hash_find(&thread_current()->page_table, &dummy_page.hash);
-  
+
   if(!elem)
   {
     current_esp = user ? f->esp : thread_current()->current_esp;
     if((unsigned) PHYS_BASE - (unsigned) current_esp <= (unsigned)0x800000 && fault_addr >= current_esp - (unsigned) 32 && (unsigned) PHYS_BASE > (unsigned) fault_addr)
     {
-      printf("stack growth %p %p %p\n", fault_addr, current_esp, PHYS_BASE - current_esp);
+      // printf("stack growth %p %p %p\n", fault_addr, current_esp, PHYS_BASE - current_esp);
       struct page_entry *page = malloc(sizeof(struct page_entry));
       page->virtual_address = base_fault_addr;
       page->frame = NULL;
@@ -199,12 +209,7 @@ page_fault (struct intr_frame *f)
         return;
       }
 
-      printf ("Page fault at %p: %s error %s page in %s context.\n",
-           fault_addr,
-           not_present ? "not present" : "rights violation",
-           write ? "writing" : "reading",
-           user ? "user" : "kernel");
-  
+      kill_message(fault_addr, not_present, write, user);
       kill (f);
     }
   }
@@ -212,8 +217,24 @@ page_fault (struct intr_frame *f)
   {
     struct thread *t = thread_current();
     struct page_entry *page = hash_entry(elem, struct page_entry, hash);
-    struct frame_entry *new_frame = get_new_frame();
+    struct frame_entry *new_frame;
 
+    if(!page->is_writable && write)
+    {
+      if(!user) {
+        f->error_code = 0;
+        f->eip = (void (*)(void)) f->eax;
+        f->eax = -1;
+        return;
+      }
+      else
+      {
+        kill_message(fault_addr, not_present, write, user);
+        kill (f);
+      }
+    }
+
+    new_frame = get_new_frame();
     page->frame = new_frame;
     new_frame->page = page;
 

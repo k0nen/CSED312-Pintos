@@ -180,6 +180,7 @@ process_exit (void)
   {
     f_e = list_entry (e, struct fd_elem, elem);
     e = list_remove(e);
+    munmap(f_e->fd);
     file_close(f_e->file_ptr);
     free(f_e);
   }
@@ -205,7 +206,7 @@ process_exit (void)
   {
     struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
     e = list_remove(e);
-    // palloc_free_page(frame->physical_address);
+    palloc_free_page(frame->physical_address);
     palloc_free_page(frame);
   }
 }
@@ -486,31 +487,31 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 
   file_seek (file, ofs);
   while (read_bytes > 0 || zero_bytes > 0) 
-    {
-      /* Calculate how to fill this page.
-         We will read PAGE_READ_BYTES bytes from FILE
-         and zero the final PAGE_ZERO_BYTES bytes. */
-      struct page_entry *page = malloc(sizeof(struct page_entry));
-      size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-      size_t page_zero_bytes = PGSIZE - page_read_bytes;
+  {
+    /* Calculate how to fill this page.
+        We will read PAGE_READ_BYTES bytes from FILE
+        and zero the final PAGE_ZERO_BYTES bytes. */
+    struct page_entry *page = malloc(sizeof(struct page_entry));
+    size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
+    size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-      page->virtual_address = upage;
-      page->frame = NULL;
-      page->zero_bytes = page_zero_bytes;
-      page->file = file;
-      page->file_offset = ofs;
-      page->is_pinned = false;
-      page->is_swap = false;
-      page->is_writable = writable;
+    page->virtual_address = upage;
+    page->frame = NULL;
+    page->zero_bytes = page_zero_bytes;
+    page->file = file;
+    page->file_offset = ofs;
+    page->is_pinned = false;
+    page->is_swap = false;
+    page->is_writable = writable;
 
-      ofs += page_read_bytes;
-      hash_insert(&thread_current()->page_table, &page->hash);
+    ofs += page_read_bytes;
+    hash_insert(&thread_current()->page_table, &page->hash);
 
-      /* Advance. */
-      read_bytes -= page_read_bytes;
-      zero_bytes -= page_zero_bytes;
-      upage += PGSIZE;
-    }
+    /* Advance. */
+    read_bytes -= page_read_bytes;
+    zero_bytes -= page_zero_bytes;
+    upage += PGSIZE;
+  }
   return true;
 }
 
