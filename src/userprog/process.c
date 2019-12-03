@@ -506,28 +506,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       ofs += page_read_bytes;
       hash_insert(&thread_current()->page_table, &page->hash);
 
-      // /* Get a page of memory. */
-      // struct frame_entry *frame = get_new_frame();
-      // uint8_t *kpage = frame->physical_address;// palloc_get_page (PAL_USER);
-      // if (kpage == NULL)
-      //   return false;
-
-      // /* Load this page. */
-      // if (file_read (file, kpage, page_read_bytes) != (int) page_read_bytes)
-      //   {
-      //     palloc_free_page (kpage);
-      //     return false; 
-      //   }
-      // memset (kpage + page_read_bytes, 0, page_zero_bytes);
-
-      // /* Add the page to the process's address space. */
-      // if (!install_page (upage, kpage, writable)) 
-      //   {
-      //     palloc_free_page (kpage);
-      //     return false; 
-      //   }
-
-      // /* Advance. */
+      /* Advance. */
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
@@ -540,19 +519,40 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 static bool
 setup_stack (void **esp) 
 {
-  uint8_t *kpage;
-  bool success = false;
+  struct page_entry *page = malloc(sizeof(struct page_entry));
+  struct frame_entry *new_frame = get_new_frame();
+  
+  if(page == NULL)
+  {
+    return false;
+  }
 
-  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (kpage != NULL) 
-    {
-      success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
-      if (success)
-        *esp = PHYS_BASE;
-      else
-        palloc_free_page (kpage);
-    }
-  return success;
+  page->virtual_address = (uint8_t *) PHYS_BASE - PGSIZE;
+  page->frame = NULL;
+  page->zero_bytes = PGSIZE;
+  page->file = NULL;
+  page->file_offset = 0;
+  page->is_pinned = false;
+  page->is_swap = false;
+  page->is_writable = true;
+  hash_insert(&thread_current()->page_table, &page->hash);
+  *esp = PHYS_BASE;
+
+  page->frame = new_frame;
+  new_frame->page = page;
+  memset (new_frame->physical_address, 0, page->zero_bytes);
+  return pagedir_set_page (thread_current()->pagedir, page->virtual_address, new_frame->physical_address, page->is_writable);
+
+  // kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  // if (kpage != NULL) 
+  //   {
+  //     success = install_page (page->virtual_address, kpage, true);
+  //     if (success)
+  //       *esp = PHYS_BASE;
+  //     else
+  //       palloc_free_page (kpage);
+  //   }
+  // return success;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel

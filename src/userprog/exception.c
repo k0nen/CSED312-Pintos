@@ -136,6 +136,8 @@ page_fault (struct intr_frame *f)
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
   void *fault_addr;  /* Fault address. */
+  void *base_fault_addr;
+  void *current_esp;
   struct hash_elem *elem;
   struct page_entry dummy_page;
   
@@ -160,45 +162,73 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-  if(!user) {
-    f->error_code = 0;
-    f->eip = (void (*)(void)) f->eax;
-    f->eax = -1;
-    return;
-  }
-
-  if((int) fault_addr % PGSIZE)
+  base_fault_addr = fault_addr;
+  if((unsigned) base_fault_addr % PGSIZE)
   {
-     fault_addr -= (int) fault_addr % PGSIZE;
+    base_fault_addr -= (unsigned) base_fault_addr % PGSIZE;
   }
 
-  dummy_page.virtual_address = fault_addr;
+  dummy_page.virtual_address = base_fault_addr;
   elem = hash_find(&thread_current()->page_table, &dummy_page.hash);
   
   if(!elem)
   {
-    printf ("Page fault at %p: %s error %s page in %s context.\n",
+    current_esp = user ? f->esp : thread_current()->current_esp;
+    if((unsigned) PHYS_BASE - (unsigned) current_esp <= (unsigned)0x800000 && fault_addr >= current_esp - (unsigned) 32 && (unsigned) PHYS_BASE > (unsigned) fault_addr)
+    {
+      printf("stack growth %p %p %p\n", fault_addr, current_esp, PHYS_BASE - current_esp);
+      struct page_entry *page = malloc(sizeof(struct page_entry));
+      page->virtual_address = base_fault_addr;
+      page->frame = NULL;
+      page->zero_bytes = PGSIZE;
+      page->file = NULL;
+      page->file_offset = 0;
+      page->is_pinned = false;
+      page->is_swap = false;
+      page->is_writable = true;
+      hash_insert(&thread_current()->page_table, &page->hash);
+      
+      return;
+    }
+    else
+    {
+      if(!user) {
+        f->error_code = 0;
+        f->eip = (void (*)(void)) f->eax;
+        f->eax = -1;
+        return;
+      }
+
+      printf ("Page fault at %p: %s error %s page in %s context.\n",
            fault_addr,
            not_present ? "not present" : "rights violation",
            write ? "writing" : "reading",
            user ? "user" : "kernel");
   
-    kill (f);
+      kill (f);
+    }
   }
   else
   {
-     struct thread *t = thread_current();
-     struct page_entry *page = hash_entry(elem, struct page_entry, hash);
-     struct frame_entry *new_frame = get_new_frame();
+    struct thread *t = thread_current();
+    struct page_entry *page = hash_entry(elem, struct page_entry, hash);
+    struct frame_entry *new_frame = get_new_frame();
 
-     page->frame = new_frame;
-     new_frame->page = page;
+    page->frame = new_frame;
+    new_frame->page = page;
 
-     file_seek (page->file, page->file_offset);
-     file_read (page->file, new_frame->physical_address, PGSIZE - page->zero_bytes);
-     memset (new_frame->physical_address + PGSIZE - page->zero_bytes, 0, page->zero_bytes);
-
-     pagedir_set_page (t->pagedir, page->virtual_address, new_frame->physical_address, page->is_writable);
+    if(page->file != NULL)
+    {
+      file_seek (page->file, page->file_offset);
+      file_read (page->file, new_frame->physical_address, PGSIZE - page->zero_bytes);
+      memset (new_frame->physical_address + PGSIZE - page->zero_bytes, 0, page->zero_bytes);
+    }
+    else
+    {
+      memset (new_frame->physical_address, 0, page->zero_bytes);
+    }
+    
+    pagedir_set_page (t->pagedir, page->virtual_address, new_frame->physical_address, page->is_writable);
   }
 }
 
