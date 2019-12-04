@@ -164,6 +164,8 @@ page_fault (struct intr_frame *f)
      be assured of reading CR2 before it changed). */
   intr_enable ();
 
+  // printf("page faulted! %p\n", fault_addr);
+
   /* Count page faults. */
   page_fault_cnt++;
 
@@ -192,6 +194,7 @@ page_fault (struct intr_frame *f)
       page->frame = NULL;
       page->zero_bytes = PGSIZE;
       page->file = NULL;
+      page->mapid = -1;
       page->file_offset = 0;
       page->is_pinned = false;
       page->is_swap = false;
@@ -250,6 +253,7 @@ page_fault (struct intr_frame *f)
     }
     
     pagedir_set_page (t->pagedir, page->virtual_address, new_frame->physical_address, page->is_writable);
+    
   }
 }
 

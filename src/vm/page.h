@@ -17,6 +17,7 @@ struct page_entry {
     struct hash_elem hash;
     
     struct file *file;
+    int mapid;
     off_t file_offset;
 
     size_t zero_bytes;

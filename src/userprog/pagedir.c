@@ -34,16 +34,18 @@ pagedir_destroy (uint32_t *pd)
 
   ASSERT (pd != init_page_dir);
   for (pde = pd; pde < pd + pd_no (PHYS_BASE); pde++)
-    if (*pde & PTE_P) 
-      {
-        uint32_t *pt = pde_get_pt (*pde);
-        uint32_t *pte;
-        
-        for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
-          if (*pte & PTE_P) 
-            palloc_free_page (pte_get_page (*pte));
-        palloc_free_page (pt);
-      }
+    if (*pde & PTE_P)
+    {
+      uint32_t *pt = pde_get_pt (*pde);
+      uint32_t *pte;
+      
+      for (pte = pt; pte < pt + PGSIZE / sizeof *pte; pte++)
+        if (*pte & PTE_P) 
+        {
+          palloc_free_page (pte_get_page (*pte));
+        }
+      palloc_free_page (pt);
+    }
   palloc_free_page (pd);
 }
 
@@ -107,13 +109,13 @@ pagedir_set_page (uint32_t *pd, void *upage, void *kpage, bool writable)
   ASSERT (pd != init_page_dir);
 
   pte = lookup_page (pd, upage, true);
-
+  
   if (pte != NULL) 
-    {
-      ASSERT ((*pte & PTE_P) == 0);
-      *pte = pte_create_user (kpage, writable);
-      return true;
-    }
+  {
+    ASSERT ((*pte & PTE_P) == 0);
+    *pte = pte_create_user (kpage, writable);
+    return true;
+  }
   else
     return false;
 }
@@ -150,10 +152,10 @@ pagedir_clear_page (uint32_t *pd, void *upage)
 
   pte = lookup_page (pd, upage, false);
   if (pte != NULL && (*pte & PTE_P) != 0)
-    {
-      *pte &= ~PTE_P;
-      invalidate_pagedir (pd);
-    }
+  {
+    *pte &= ~PTE_P;
+    invalidate_pagedir (pd);
+  }
 }
 
 /* Returns true if the PTE for virtual page VPAGE in PD is dirty,
@@ -174,15 +176,15 @@ pagedir_set_dirty (uint32_t *pd, const void *vpage, bool dirty)
 {
   uint32_t *pte = lookup_page (pd, vpage, false);
   if (pte != NULL) 
+  {
+    if (dirty)
+      *pte |= PTE_D;
+    else 
     {
-      if (dirty)
-        *pte |= PTE_D;
-      else 
-        {
-          *pte &= ~(uint32_t) PTE_D;
-          invalidate_pagedir (pd);
-        }
+      *pte &= ~(uint32_t) PTE_D;
+      invalidate_pagedir (pd);
     }
+  }
 }
 
 /* Returns true if the PTE for virtual page VPAGE in PD has been

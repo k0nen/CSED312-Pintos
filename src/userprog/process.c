@@ -161,7 +161,8 @@ process_exit (void)
   struct signal *sig;
   struct fd_elem *f_e;
   struct list_elem *e;
-  
+  struct hash_iterator i;
+
   if(cur->parent) list_remove(&cur->p_elem);
   
   for (e = list_begin (&cur->signal_list); e != list_end (&cur->signal_list); )
@@ -180,34 +181,37 @@ process_exit (void)
   {
     f_e = list_entry (e, struct fd_elem, elem);
     e = list_remove(e);
-    munmap(f_e->fd);
     file_close(f_e->file_ptr);
     free(f_e);
   }
-  
+
+  hash_first(&i, &cur->page_table);
+  while(hash_next(&i))
+  {
+    struct page_entry *vpage = hash_entry(hash_cur(&i), struct page_entry, hash);
+
+    if(vpage->mapid != -1 && vpage->frame != NULL && pagedir_is_dirty(cur->pagedir, vpage->virtual_address))
+    {
+      file_seek(vpage->file, vpage->file_offset);
+      file_write(vpage->file, vpage->frame->physical_address, PGSIZE - (unsigned) vpage->zero_bytes);
+    }
+  }
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
   if (pd != NULL) 
-    {
-      /* Correct ordering here is crucial.  We must set
-         cur->pagedir to NULL before switching page directories,
-         so that a timer interrupt can't switch back to the
-         process page directory.  We must activate the base page
-         directory before destroying the process's page
-         directory, or our active page directory will be one
-         that's been freed (and cleared). */
-      cur->pagedir = NULL;
-      pagedir_activate (NULL);
-      pagedir_destroy (pd);
-    }
-
-  for(e = list_begin(&cur->frames); e != list_end(&cur->frames);)
   {
-    struct frame_entry *frame = list_entry (e, struct frame_entry, elem);
-    e = list_remove(e);
-    palloc_free_page(frame->physical_address);
-    palloc_free_page(frame);
+    /* Correct ordering here is crucial.  We must set
+        cur->pagedir to NULL before switching page directories,
+        so that a timer interrupt can't switch back to the
+        process page directory.  We must activate the base page
+        directory before destroying the process's page
+        directory, or our active page directory will be one
+        that's been freed (and cleared). */
+    cur->pagedir = NULL;
+    pagedir_activate (NULL);
+    pagedir_destroy (pd);
   }
 }
 
@@ -499,6 +503,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     page->frame = NULL;
     page->zero_bytes = page_zero_bytes;
     page->file = file;
+    page->mapid = -1;
     page->file_offset = ofs;
     page->is_pinned = false;
     page->is_swap = false;
@@ -532,6 +537,7 @@ setup_stack (void **esp)
   page->frame = NULL;
   page->zero_bytes = PGSIZE;
   page->file = NULL;
+  page->mapid = -1;
   page->file_offset = 0;
   page->is_pinned = false;
   page->is_swap = false;
@@ -543,17 +549,6 @@ setup_stack (void **esp)
   new_frame->page = page;
   memset (new_frame->physical_address, 0, page->zero_bytes);
   return pagedir_set_page (thread_current()->pagedir, page->virtual_address, new_frame->physical_address, page->is_writable);
-
-  // kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  // if (kpage != NULL) 
-  //   {
-  //     success = install_page (page->virtual_address, kpage, true);
-  //     if (success)
-  //       *esp = PHYS_BASE;
-  //     else
-  //       palloc_free_page (kpage);
-  //   }
-  // return success;
 }
 
 /* Adds a mapping from user virtual address UPAGE to kernel

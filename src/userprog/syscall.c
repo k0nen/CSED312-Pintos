@@ -9,6 +9,7 @@
 #include "threads/malloc.h"
 #include "threads/vaddr.h"
 #include "threads/palloc.h"
+#include "userprog/pagedir.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -448,9 +449,18 @@ sys_mmap(struct intr_frame *f)
   }
   
   file = get_file_from_fd(fd);
+  
+  if(file == NULL)
+  {
+    f->eax = -1;
+    return;
+  }
+
   file_size = file_length(file);
   aligned_file_size = file_size / PGSIZE * PGSIZE + (file_size % PGSIZE ? PGSIZE : 0);
-  if(file == NULL || file_size == 0)
+  file = file_reopen(file);  
+
+  if(file_size == 0)
   {
     f->eax = -1;
     return;
@@ -475,17 +485,18 @@ sys_mmap(struct intr_frame *f)
     return;
   }
 
-  int page_count = 0;
+  unsigned page_count = 0;
   while(file_size > 0)
   {
     struct page_entry *page = malloc(sizeof(struct page_entry));
-    size_t page_read_bytes = (file_size % PGSIZE == 0 ? PGSIZE : file_size % PGSIZE);
+    size_t page_read_bytes = (file_size / PGSIZE > 0 ? PGSIZE : file_size);
     size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
     page->virtual_address = addr + PGSIZE * page_count;
     page->frame = NULL;
     page->zero_bytes = page_zero_bytes;
     page->file = file;
+    page->mapid = fd;
     page->file_offset = PGSIZE * page_count;
     page->is_pinned = false;
     page->is_swap = false;
@@ -504,41 +515,40 @@ void
 sys_munmap (struct intr_frame *f)
 {
   int fd;
-  struct file *file;
   struct hash_iterator prev, here;
 
   if(!validate_read(f->esp + 4, 4)) kill_process();
   fd = *(int *)(f->esp + 4);
 
-  file = get_file_from_fd(fd);
-  if(file == NULL)
-  {
-    return;
-  }
-
   hash_first(&here, &thread_current()->page_table);
   while(1)
   {
     struct page_entry *vpage = hash_entry(hash_cur(&here), struct page_entry, hash);
-    if(vpage->file == file)
+    if(vpage->mapid == fd)
     {
       struct frame_entry *frame = vpage->frame;
+
       if(frame != NULL)
       {
+        list_remove(&frame->elem);
+
+        if(pagedir_is_dirty(thread_current()->pagedir, vpage->virtual_address))
+        {
+          file_seek(vpage->file, vpage->file_offset);
+          file_write(vpage->file, frame->physical_address, PGSIZE - (unsigned) vpage->zero_bytes);
+        }
+        
         palloc_free_page(frame->physical_address);
-        palloc_free_page(frame);
+        free(frame);
+        pagedir_clear_page(thread_current()->pagedir, vpage->virtual_address);
       }
 
       prev = here;
-      if(!hash_next(&here))
-      {
-        hash_delete(&thread_current()->page_table, hash_cur(&prev));
-        free(vpage);
-        break;
-      }
-
+      void *next = hash_next(&here);
       hash_delete(&thread_current()->page_table, hash_cur(&prev));
       free(vpage);
+
+      if(!next) break;
     }
     else
     {
