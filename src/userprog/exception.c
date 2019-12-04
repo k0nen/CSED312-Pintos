@@ -188,7 +188,7 @@ page_fault (struct intr_frame *f)
     current_esp = user ? f->esp : thread_current()->current_esp;
     if((unsigned) PHYS_BASE - (unsigned) current_esp <= (unsigned)0x800000 && fault_addr >= current_esp - (unsigned) 32 && (unsigned) PHYS_BASE > (unsigned) fault_addr)
     {
-      // printf("stack growth %p %p %p\n", fault_addr, current_esp, PHYS_BASE - current_esp);
+      printf("stack growth %p %p %p\n", fault_addr, current_esp, PHYS_BASE - current_esp);
       struct page_entry *page = malloc(sizeof(struct page_entry));
       page->virtual_address = base_fault_addr;
       page->frame = NULL;
@@ -209,6 +209,7 @@ page_fault (struct intr_frame *f)
         f->error_code = 0;
         f->eip = (void (*)(void)) f->eax;
         f->eax = -1;
+
         return;
       }
 
@@ -234,26 +235,38 @@ page_fault (struct intr_frame *f)
       {
         kill_message(fault_addr, not_present, write, user);
         kill (f);
+        return;
       }
     }
 
-    new_frame = get_new_frame();
-    page->frame = new_frame;
-    new_frame->page = page;
-
-    if(page->file != NULL)
+    if(page->is_swap)
     {
-      file_seek (page->file, page->file_offset);
-      file_read (page->file, new_frame->physical_address, PGSIZE - page->zero_bytes);
-      memset (new_frame->physical_address + PGSIZE - page->zero_bytes, 0, page->zero_bytes);
+      recover_swap_frame(page->frame);
+      new_frame = page->frame;
+
+      // printf("swapped page! %p %p\n", fault_addr, new_frame->physical_address);
     }
     else
     {
-      memset (new_frame->physical_address, 0, page->zero_bytes);
+      new_frame = get_new_frame();
+      page->frame = new_frame;
+      new_frame->page = page;
+
+      // printf("not swapped page %p %p\n", fault_addr, new_frame->physical_address);
+
+      if(page->file != NULL)
+      {
+        file_seek (page->file, page->file_offset);
+        file_read (page->file, new_frame->physical_address, PGSIZE - page->zero_bytes);
+        memset (new_frame->physical_address + PGSIZE - page->zero_bytes, 0, page->zero_bytes);
+      }
+      else
+      {
+        memset (new_frame->physical_address, 0, page->zero_bytes);
+      }
     }
     
     pagedir_set_page (t->pagedir, page->virtual_address, new_frame->physical_address, page->is_writable);
-    
   }
 }
 
