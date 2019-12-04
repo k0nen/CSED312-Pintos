@@ -17,6 +17,8 @@ static long long page_fault_cnt;
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
 
+struct lock page_fault_lock;
+
 /* Registers handlers for interrupts that can be caused by user
    programs.
 
@@ -64,6 +66,8 @@ exception_init (void)
      We need to disable interrupts for page faults because the
      fault address is stored in CR2 and needs to be preserved. */
   intr_register_int (14, 0, INTR_OFF, page_fault, "#PF Page-Fault Exception");
+
+  lock_init(&page_fault_lock);
 }
 
 /* Prints exception statistics. */
@@ -188,7 +192,6 @@ page_fault (struct intr_frame *f)
     current_esp = user ? f->esp : thread_current()->current_esp;
     if((unsigned) PHYS_BASE - (unsigned) current_esp <= (unsigned)0x800000 && fault_addr >= current_esp - (unsigned) 32 && (unsigned) PHYS_BASE > (unsigned) fault_addr)
     {
-      printf("stack growth %p %p %p\n", fault_addr, current_esp, PHYS_BASE - current_esp);
       struct page_entry *page = malloc(sizeof(struct page_entry));
       page->virtual_address = base_fault_addr;
       page->frame = NULL;
@@ -239,20 +242,17 @@ page_fault (struct intr_frame *f)
       }
     }
 
+    lock_acquire(&page_fault_lock);
     if(page->is_swap)
     {
       recover_swap_frame(page->frame);
       new_frame = page->frame;
-
-      // printf("swapped page! %p %p\n", fault_addr, new_frame->physical_address);
     }
     else
     {
       new_frame = get_new_frame();
       page->frame = new_frame;
       new_frame->page = page;
-
-      // printf("not swapped page %p %p\n", fault_addr, new_frame->physical_address);
 
       if(page->file != NULL)
       {
@@ -267,6 +267,7 @@ page_fault (struct intr_frame *f)
     }
     
     pagedir_set_page (t->pagedir, page->virtual_address, new_frame->physical_address, page->is_writable);
+    lock_release(&page_fault_lock);
   }
 }
 

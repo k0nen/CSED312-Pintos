@@ -19,6 +19,8 @@ struct file* get_file_from_fd(int fd);
 bool validate_read(void *p, int size);
 bool validate_write(void *p, int size);
 
+extern struct lock page_fault_lock;
+
 static void (*syscall_table[20])(struct intr_frame*) = {
   sys_halt,
   sys_exit,
@@ -80,7 +82,7 @@ struct file* get_file_from_fd(int fd) {
 
 bool validate_read(void *p, int size) {
   int i = 0;
-  if(p >= PHYS_BASE || p + size >= PHYS_BASE) return false;
+  if(p >= PHYS_BASE || p + size > PHYS_BASE) return false;
   for(i = 0; i < size; i++) {
     if(get_user(p + i) == -1)
       return false;
@@ -307,6 +309,8 @@ void sys_read (struct intr_frame * f) {
   
   if(!validate_write(buffer, size)) kill_process();
   
+  lock_acquire(&page_fault_lock);
+
   if(fd == 0) {
     c = input_getc();
     while(c != '\n' && c != -1 && count < size) {
@@ -323,12 +327,15 @@ void sys_read (struct intr_frame * f) {
   else {
     if(file == NULL) {
       f->eax = -1;
+      lock_release(&page_fault_lock);
       return;
     }
     lock_acquire(&file_lock);
     f->eax = file_read(file, buffer, size);
     lock_release(&file_lock);
   }
+
+  lock_release(&page_fault_lock);
 }
 
 //int write (int fd, const void *buffer, unsigned size)
@@ -347,6 +354,8 @@ void sys_write (struct intr_frame * f) {
   
   if(!validate_read(buffer, size)) kill_process();
   
+  lock_acquire(&page_fault_lock);
+
   if(fd == 0) {
     f->eax = 0; 
   }
@@ -357,12 +366,15 @@ void sys_write (struct intr_frame * f) {
   else {
     if(file == NULL) {
       f->eax = 0;
+      lock_release(&page_fault_lock);
       return;
     }
     lock_acquire(&file_lock);
     f->eax = file_write (file, buffer, size);
     lock_release(&file_lock);
   }
+
+  lock_release(&page_fault_lock);
 }
 
 //void seek (int fd, unsigned position)
@@ -520,6 +532,7 @@ sys_munmap (struct intr_frame *f)
   if(!validate_read(f->esp + 4, 4)) kill_process();
   fd = *(int *)(f->esp + 4);
 
+  lock_acquire(&page_fault_lock);
   hash_first(&here, &thread_current()->page_table);
   while(1)
   {
@@ -558,4 +571,5 @@ sys_munmap (struct intr_frame *f)
       }
     }
   }
+  lock_release(&page_fault_lock);
 }
