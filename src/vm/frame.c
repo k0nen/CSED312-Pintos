@@ -3,9 +3,8 @@
 #include "threads/palloc.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
+#include "vm/swap.h"
 #include <string.h>
-
-static block_sector_t max_sector_num;
 
 static struct frame_entry*
 select_evicted_frame(struct frame_entry *dest)
@@ -40,11 +39,11 @@ eviction(struct frame_entry *frame)
 
   frame->physical_address = evicted_frame->physical_address;
   evicted_frame->is_swap = true;
+  evicted_frame->page->is_dirty = pagedir_is_dirty(t->pagedir, evicted_frame->page->virtual_address);
 
   if(!frame->is_swap)
   {
-    evicted_frame->block_offset = max_sector_num;
-    max_sector_num += PGSIZE / BLOCK_SECTOR_SIZE;
+    evicted_frame->block_offset = swap_get_sector();
   }
   else
   {

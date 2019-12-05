@@ -22,8 +22,10 @@
 #include "userprog/syscall.h"
 #include "vm/frame.h"
 #include "vm/page.h"
+#include "vm/swap.h"
 
 static thread_func start_process NO_RETURN;
+extern struct lock page_fault_lock;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
 
 /* Starts a new thread running a user program loaded from
@@ -190,10 +192,39 @@ process_exit (void)
   {
     struct page_entry *vpage = hash_entry(hash_cur(&i), struct page_entry, hash);
 
-    if(vpage->mapid != -1 && vpage->frame != NULL && pagedir_is_dirty(cur->pagedir, vpage->virtual_address))
+    if(vpage->mapid != -1 && vpage->frame != NULL)
     {
-      file_seek(vpage->file, vpage->file_offset);
-      file_write(vpage->file, vpage->frame->physical_address, PGSIZE - (unsigned) vpage->zero_bytes);
+      if(!vpage->is_swap && pagedir_is_dirty(cur->pagedir, vpage->virtual_address))
+      {
+        file_seek(vpage->file, vpage->file_offset);
+        file_write(vpage->file, vpage->frame->physical_address, PGSIZE - (unsigned) vpage->zero_bytes);
+      }
+      else if(vpage->is_swap && vpage->is_dirty)
+      {
+        void *temp = palloc_get_page(PAL_ZERO);
+        struct block *swap = block_get_role(BLOCK_SWAP);
+
+        lock_acquire(&page_fault_lock);
+
+        for(int i = 0; i < PGSIZE / BLOCK_SECTOR_SIZE; i++)
+        {
+          off_t offset = i * BLOCK_SECTOR_SIZE;
+          block_read(swap, vpage->frame->block_offset + i, temp + offset);
+        }  
+
+        lock_release(&page_fault_lock);
+
+        file_seek(vpage->file, vpage->file_offset);
+        file_write(vpage->file, temp, PGSIZE - (unsigned) vpage->zero_bytes);
+        palloc_free_page(temp);
+      }
+
+      if(vpage->is_swap)
+      {
+        lock_acquire(&page_fault_lock);
+        swap_return_sector(vpage->frame->block_offset);
+        lock_release(&page_fault_lock);
+      }
     }
   }
 

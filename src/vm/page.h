@@ -13,6 +13,7 @@ struct page_entry {
     bool is_swap;
     bool is_writable;
     bool is_pinned;
+    bool is_dirty;
     
     struct hash_elem hash;
     
