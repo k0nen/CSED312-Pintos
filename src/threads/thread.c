@@ -300,7 +300,6 @@ thread_exit ()
      when it calls thread_schedule_tail(). */
   intr_disable ();
   list_remove (&cur->allelem);
-  list_remove (&cur->elem);
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
