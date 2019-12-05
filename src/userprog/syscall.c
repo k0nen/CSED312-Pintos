@@ -577,9 +577,13 @@ sys_munmap (struct intr_frame *f)
           lock_release(&page_fault_lock);
         }
         
-        palloc_free_page(frame->physical_address);
+        if(!vpage->is_swap)
+        {
+          palloc_free_page(frame->physical_address);
+          pagedir_clear_page(thread_current()->pagedir, vpage->virtual_address);
+        }
+
         free(frame);
-        pagedir_clear_page(thread_current()->pagedir, vpage->virtual_address);
       }
 
       prev = here;

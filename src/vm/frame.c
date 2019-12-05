@@ -31,9 +31,15 @@ eviction(struct frame_entry *frame)
 {
   struct thread *t = thread_current();
   struct block *swap = block_get_role(BLOCK_SWAP);
+  // printf("find frame %p\n", frame);
   struct frame_entry *evicted_frame = select_evicted_frame(frame);
 
   // printf("evicted frame %p\n", evicted_frame);
+  if(evicted_frame == NULL)
+  {
+    printf("%p %p\n", frame, evicted_frame);
+  }
+
   ASSERT(evicted_frame != NULL);
   ASSERT(!evicted_frame->is_swap);
 

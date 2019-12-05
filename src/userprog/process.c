@@ -218,13 +218,18 @@ process_exit (void)
         file_write(vpage->file, temp, PGSIZE - (unsigned) vpage->zero_bytes);
         palloc_free_page(temp);
       }
+    }
 
-      if(vpage->is_swap)
-      {
-        lock_acquire(&page_fault_lock);
-        swap_return_sector(vpage->frame->block_offset);
-        lock_release(&page_fault_lock);
-      }
+    if(vpage->frame != NULL && vpage->is_swap)
+    {
+      lock_acquire(&page_fault_lock);
+      swap_return_sector(vpage->frame->block_offset);
+      lock_release(&page_fault_lock);
+    }
+
+    if(vpage->frame) 
+    {
+      free(vpage->frame);
     }
   }
 
